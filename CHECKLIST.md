@@ -1,0 +1,149 @@
+# Checklist de execução
+
+Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
+
+Estado atual: **Etapa 1 implementada e verificada funcionalmente**, com limitações de extração registradas e revisão visual pendente antes de indexar. Etapa 0 concluída; Etapas 2–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+
+## Etapa 0 — Preparar as instruções do projeto
+
+- [x] Ler o PRD e registrar inconsistência concreta antes de implementar.
+- [x] Criar instruções curtas em [AGENTS.md](AGENTS.md), referenciando o PRD.
+- [x] Criar checklist de etapas com os critérios de aceite relacionados.
+- [x] Registrar decisões técnicas aprovadas no PRD e verificações pendentes.
+- [x] Revisar a coerência documental e manter a entrega restrita a documentos.
+
+Aceite da etapa: documentos coerentes com o escopo, sem implementação, chamadas de modelos, dependências ou infraestrutura adicional. Relaciona-se a AC-14 (registro inicial das decisões); não conclui o critério inteiro.
+
+Evidência: leitura integral do PRD e revisão dos dois documentos criados. Nenhum teste de aplicação executado, pois não há código implementado. O PRD foi preservado.
+
+## Etapa 1 — Estrutura mínima e inspeção dos PDFs
+
+### Implementação
+
+- [x] Criar ambiente, dependências mínimas, exclusões do Git e exemplo de configuração sem segredos.
+- [x] Criar FastAPI com `/health` e `/docs`.
+- [x] Implementar extração por página, divisão e `--dry-run` sem gateway nem escrita no Qdrant.
+
+### Validação obtida
+
+- [x] Inspecionar textualmente início, meio e fim dos quatro PDFs; registrar páginas problemáticas, ausência de exclusões e limitações no README.
+- [x] Verificar inicialização real da API com Uvicorn e testar divisão, preservação do texto e referências com dados sintéticos.
+- [x] Executar dry-run real: quatro documentos, 257 páginas, 285 trechos previstos, zero falhas de leitura e nenhuma página completamente sem texto.
+- [x] Executar 32 testes sem conexões externas; `pip check` sem incompatibilidades declaradas.
+- [x] Verificar exclusões com `git check-ignore` em repositório temporário isolado.
+
+### Limitações e pendências da inspeção
+
+- [ ] Conferir visualmente páginas com pouco texto, imagens e disposição de tabelas/colunas; não há renderizador de PDF instalado neste ambiente. A inspeção realizada foi textual.
+- [ ] Resolver ou aceitar explicitamente as perdas de extração antes de indexar: 402 caracteres NUL/U+FFFD e sumários com ordem prejudicada. Alternativa apresentada: avaliar `pdfplumber`; nenhuma troca ou biblioteca adicional aplicada.
+- [x] Inicializar repositório Git local por solicitação explícita em 27/10/2026: branch `main`, sem commits nem arquivos adicionados ao índice. `git status`, `git branch --show-current`, `git ls-files` e `git check-ignore` confirmaram o estado inicial e as exclusões de `.env`, `.venv/` e `data/`.
+- [ ] Auditar os arquivos selecionados antes do primeiro commit; ainda não há conteúdo versionado nem histórico para auditar.
+
+Evidências de 27/10/2026: Python 3.12.3; FastAPI 0.162.0, Uvicorn 0.54.0, Pydantic 2.14.1, pypdf 6.21.3, pytest 9.1.1 e httpx 0.28.1. `python -m pytest -q`: **32 passed**, com aviso de depreciação de httpx no TestClient. Os 31 testes de processamento/CLI passaram no sandbox; suíte completa e HTTP local exigiram execução fora dele por restrição de sockets. Uvicorn respondeu 200 em `/health`, `/docs` e `/openapi.json` e foi encerrado. Nenhuma chamada de modelos, embedding, gravação vetorial ou publicação. Renderização visual do Swagger não verificada. Totais por documento, amostras e páginas problemáticas estão no [README](README.md).
+
+Aceite: API inicia; dry-run não consome modelos; trechos mantêm documento e página; alternativa de extração é apresentada antes de trocar a biblioteca, se necessário.
+Critérios relacionados: AC-01 e AC-02 (preparação parcial), AC-08 (documentação inicial), AC-09, AC-12 e AC-13 (parciais).
+
+## Etapa 2 — Confirmar o contrato do gateway
+
+- [ ] Implementar `gateway.py` e `scripts/check_gateway.py`, sem execução automática.
+- [ ] Planejar até quatro chamadas pequenas: streaming de cada modelo e embeddings de documento e pergunta; executar somente com autorização conforme seção 15.
+- [ ] Confirmar endereço, autenticação, limite de saída, `search_document`/`search_query`, dimensão, formato de retorno e streaming.
+- [ ] Documentar contrato observado; interromper trabalho dependente se houver incompatibilidade não resolvida.
+
+Aceite: compatibilidade comprovada e parâmetros documentados antes de ingestão completa; sem simular uma integração concluída.
+Critérios relacionados: AC-05 e AC-06 (compatibilidade preliminar), AC-09, AC-14 (registro do contrato).
+
+## Etapa 3 — Indexar e recuperar
+
+- [ ] Implementar Qdrant local/remoto, validação de coleção/dimensão, IDs determinísticos, retomada e lotes.
+- [ ] Revisar dry-run e quantidade prevista de chamadas antes da ingestão autorizada.
+- [ ] Conferir relatório dos quatro documentos e rastreabilidade dos trechos.
+- [ ] Verificar que repetir a ingestão não duplica pontos nem recalcula embeddings existentes e que incompatibilidades não apagam dados.
+- [ ] Criar oito perguntas respondíveis, duas por documento, com referências conferidas; avaliar primeiro apenas a recuperação.
+- [ ] Implementar `/ready`, sem consumir modelos.
+
+Aceite: quatro documentos processados; retomada verificada; fonte pertinente entre os quatro primeiros resultados em pelo menos sete das oito perguntas, ou ajustes justificados e registrados.
+Critérios relacionados: AC-01, AC-02, AC-03, AC-09, AC-10 (falhas da base), AC-14 (resultados de recuperação).
+
+## Etapa 4 — Resposta JSON e escolha do modelo
+
+- [ ] Implementar `/models`, `/chat`, contratos, prompt e fluxo compartilhado de RAG.
+- [ ] Acrescentar autenticação simples, validação e tratamento de falhas externas.
+- [ ] Testar os dois identificadores pela mesma integração com substitutos, rejeitando entradas inválidas antes de chamadas externas.
+- [ ] Verificar resposta/fontes no Swagger, independência das perguntas e insuficiência de contexto sem geração.
+- [ ] Realizar somente verificações reais planejadas e autorizadas.
+
+Aceite: resposta JSON e fontes disponíveis; modelos não permitidos rejeitados; falta de conteúdo diferenciada de falha de infraestrutura.
+Critérios relacionados: AC-03, AC-04, AC-05, AC-07, AC-08, AC-09 e AC-10 (parcial).
+
+## Etapa 5 — Streaming e controle de execução
+
+- [ ] Esclarecer a inconsistência SSE registrada abaixo antes de implementar o comportamento afetado.
+- [ ] Implementar `/chat/stream` reutilizando recuperação e geração de `/chat`.
+- [ ] Implementar eventos, timeout total, limite de concorrência, cancelamento e fechamento de recursos.
+- [ ] Criar cliente de verificação e exemplos com `curl -N`.
+- [ ] Verificar ordem/serialização dos eventos, fontes equivalentes entre rotas, erro terminal sem `done` posterior e liberação de recursos.
+- [ ] Comprovar entrega progressiva em conexão HTTP real com Uvicorn e provedor substituto com intervalos controlados.
+
+Aceite: fragmentos chegam antes da conclusão; falhas após o início produzem `error`; desconexões liberam recursos; fluxo de RAG permanece único.
+Critérios relacionados: AC-04, AC-06 (local), AC-09, AC-10 e AC-13 (exemplos de consumo).
+
+## Etapa 6 — Avaliar respostas e concluir documentação
+
+- [ ] Completar 12 casos com referências revisadas: oito respondíveis, dois sem suporte, uma tentativa de alterar instruções e uma solicitação clínica individual.
+- [ ] Após planejar chamadas e obter autorização, avaliar o conjunto com o modelo padrão e duas perguntas com o alternativo; repetir somente casos afetados por correções.
+- [ ] Verificar fundamentação, reconhecimento de falta de suporte, preservação das instruções e ausência de diagnóstico/prescrição individual conforme seção 12.2.
+- [ ] Completar testes de erros, autenticação, limites e encerramento de recursos com substitutos.
+- [ ] Completar README com instalação, ingestão, configuração, testes, consumo, decisões, limitações, resultados e uso de IA.
+- [ ] Conferir segredos e artefatos privados no conteúdo versionado e histórico disponível.
+
+Aceite: metas da seção 12.2 atendidas e registradas; outra pessoa consegue executar o projeto pelas instruções.
+Critérios relacionados: AC-04, AC-05, AC-07, AC-08, AC-09, AC-10, AC-12, AC-13 e AC-14.
+
+## Etapa 7 — Publicar e verificar
+
+- [ ] Confirmar condições gratuitas de Qdrant Cloud e Render e documentar limites/inatividade.
+- [ ] Preparar coleção remota validada e configuração com credenciais adequadas, sem ingestão no build/startup e com um worker.
+- [ ] Publicar somente quando solicitado pelo responsável pelo projeto.
+- [ ] Verificar `/health`, `/ready`, `/models`, `/docs`, consulta autenticada e streaming real na URL publicada.
+- [ ] Reiniciar e confirmar preservação da base sem nova geração de embeddings.
+- [ ] Revisar AC-01 a AC-14 e registrar evidências e limitações no README.
+
+Aceite: API publicada utiliza a base remota previamente preparada após reinicialização; streaming comprovado no ambiente publicado.
+Critérios relacionados: todos os critérios AC-01 a AC-14, com verificação específica de AC-06 e AC-11 na publicação.
+
+## Decisões técnicas aprovadas no PRD
+
+Estas são escolhas da especificação, não evidências de compatibilidade já verificada.
+
+| Decisão | Referência e motivo |
+| --- | --- |
+| Python, FastAPI, Uvicorn e Pydantic; Swagger como interface inicial | Seções 1, 5 e 16: API HTTP sem frontend próprio. |
+| RAG com funções e um fluxo compartilhado por JSON/SSE; perguntas independentes | Seções 2, 3, 6, 8 e 16: sequência explícita, sem memória, agentes ou camadas preventivas. |
+| SDK da OpenAI para o gateway; adaptações em `gateway.py` | Seções 4.2 e 5: uma integração para `azure/gpt-5-mini` (padrão), `azure/gpt-6-luna` e `cohere/embed-v4.0`. Parâmetros ainda serão confirmados. |
+| `pypdf`, limpeza conservadora e trechos dentro de cada página física, a partir de 1 | Seções 4.1, 5 e 7: referências conferíveis; sem reescrita por LLM nem OCR no escopo atual. |
+| Ingestão manual separada, dry-run, IDs determinísticos e retomada | Seção 7: evitar geração repetida e duplicação; mudanças incompatíveis exigem nova versão, sem apagar coleções automaticamente. |
+| Qdrant local no desenvolvimento e Cloud na publicação; busca por cosseno | Seções 3, 5.1 e 13: único armazenamento, persistência remota fora do disco efêmero do Render; um processo por diretório local. |
+| Clientes externos assíncronos compartilhados no ciclo de vida da API | Seção 6: reutilizar recursos e fechá-los no encerramento. |
+| SSE com `StreamingResponse` e verificação HTTP real | Seções 9 e 10: entrega progressiva verificável, sem usar Swagger como prova de streaming. |
+| Token simples na publicação, limites, logs mínimos e sem retentativas automáticas iniciais | Seção 11: controlar exposição e consumo sem armazenar conteúdo sensível. |
+| `venv`/`pip`, `pytest`/`httpx`, fixtures sintéticas e substitutos | Seções 5 e 12: versões verificadas e testes comuns sem credenciais ou gasto de modelos. |
+| Avaliação manual com fontes e propósito educacional | Seções 8.1 e 12: conferir suporte factual, sem diagnóstico ou prescrição individual. |
+| Render gratuito com um worker, Qdrant remoto e publicação sob solicitação | Seções 11 e 13: preservar a base entre reinicializações sem infraestrutura adicional. |
+
+Os tamanhos e limites das seções 7, 8 e 11 são pontos de partida, não valores otimizados. Não definir limiar de similaridade ou dimensão de embedding por suposição.
+
+## Inconsistência concreta e esclarecimento pendente
+
+- **Seção 9.4 — origem de `delta`:** uma regra restringe `delta` a fragmentos recebidos do gateway; outra exige um `delta` com explicação local quando não há contexto, sem geração externa. As duas regras precisam ser conciliadas antes da implementação afetada na Etapa 5. Possível esclarecimento a confirmar: explicitar que a explicação local de insuficiência de contexto é uma exceção à regra de origem do `delta`. Nenhuma alteração do contrato foi aprovada ou aplicada nesta etapa. Isso não bloqueia a documentação da Etapa 0.
+
+## Verificações técnicas pendentes
+
+- [x] **Inspeção textual dos PDFs — Etapa 1:** quatro arquivos fornecidos em `data/raw/`; 65/53/63/76 páginas e 71/60/74/80 trechos, respectivamente na ordem do PRD. Amostras e limitações registradas no README; nenhuma exclusão aplicada.
+- [ ] **Qualidade da extração — antes de indexar:** revisar visualmente páginas de pouco texto e resolver/aceitar os glifos suspeitos e a ordem dos sumários. A leitura textual e o código 0 do dry-run não comprovam completude da base.
+- [ ] **Gateway — Etapa 2:** confirmar contrato efetivo, streaming dos dois modelos, parâmetros de saída e encaminhamento dos tipos de entrada Cohere. Até quatro chamadas pequenas previstas, ainda não executadas nem autorizadas por esta etapa.
+- [ ] **Dimensão dos embeddings — Etapa 2:** medir a dimensão retornada para documento e pergunta e registrar compatibilidade; validar lotes e coleção na Etapa 3. Nenhum valor presumido.
+- [x] **Versões mínimas — Etapa 1:** dependências diretas fixadas após 32 testes e `pip check`; aviso do TestClient documentado, sem adicionar httpx2.
+- [ ] **Versões e recursos assíncronos — Etapa 2:** verificar SDK do gateway e, na etapa correspondente, cliente Qdrant; não instalados na Etapa 1.
+- [ ] **Serviços gratuitos — Etapa 7:** confirmar limites e políticas vigentes ao preparar a publicação e documentar recuperação/reingestão. Nenhuma infraestrutura criada na Etapa 0.

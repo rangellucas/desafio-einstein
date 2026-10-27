@@ -1,0 +1,23 @@
+# Credenciais e configurações locais
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Documentos, textos extraídos, embeddings, índices e relatórios privados
+data/
+*.pdf
+
+# Ambiente e artefatos Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configurações locais do agente
+.agents/
+.aws/
+.codex/
