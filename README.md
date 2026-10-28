@@ -1,6 +1,6 @@
 # Consulta educacional sobre Saúde Mental
 
-Implementação das **Etapas 1–5** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consultas autenticadas em `/chat` (JSON) e `/chat/stream` (SSE), com prazo total e capacidade compartilhada. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
+Implementação das **Etapas 1–5** e preparação/documentação da **Etapa 6** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consultas autenticadas em `/chat` (JSON) e `/chat/stream` (SSE), com prazo total e capacidade compartilhada. A integração foi testada com substitutos e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. Há 12 casos revisados e um procedimento reproduzível de avaliação, ainda sem execução real autorizada. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
 
 ## Instalação e execução
 
@@ -345,7 +345,52 @@ python -m scripts.check_stream --execute --url "$API_URL" --model azure/gpt-5-mi
 
 `--question` permite mudar a pergunta e omitir `--model` usa o padrão da API. Sem token configurado no desenvolvimento, omita o header Authorization no curl. Como a rota é POST, não use diretamente `EventSource` do navegador. Use `/chat` no Swagger para explorar JSON/fontes: **Swagger não será usado como prova de entrega incremental**, embora `/chat/stream` esteja documentada no OpenAPI com eventos, exemplos e erros.
 
-Permanecem pendentes o contrato efetivo/streaming dos dois modelos no gateway, ingestão/recuperação/respostas reais e buffering no proxy publicado. Nenhuma dessas verificações é inferida dos substitutos; publicação e Etapas 6–7 não foram executadas.
+Permanecem pendentes o contrato efetivo/streaming dos dois modelos no gateway, ingestão/recuperação/respostas reais e buffering no proxy publicado. Nenhuma dessas verificações é inferida dos substitutos. A Etapa 6 está preparada sem avaliação real; a publicação da Etapa 7 não foi iniciada.
+
+## Avaliação das respostas — Etapa 6
+
+O [procedimento completo](evals/README.md) registra critérios por caso, revisão humana, privacidade, retomada e repetição restrita. [Resultados](evals/results.md): **avaliação real pendente**, sem pontuações inventadas. Oito perguntas respondíveis (duas por apostila) estão em [retrieval.json](evals/retrieval.json); duas sem suporte, uma tentativa de alterar instruções e uma solicitação clínica individual estão em [behavior.json](evals/behavior.json). As oito páginas esperadas foram reconferidas textualmente. Trechos privados de referência foram salvos somente em `data/evals/stage6/references.json`, com hashes dos PDFs. Isso não conclui a revisão visual da extração.
+
+Os pré-requisitos continuam pendentes: confirmar o gateway/dimensão, revisar ou aceitar explicitamente as perdas de extração e concluir a ingestão. Os comandos reais preparados nas seções anteriores devem ser autorizados separadamente. Antes de qualquer consumo, informar objetivo e teto; as opções de confirmação não substituem autorização.
+
+```bash
+# Somente planejamento; não lê credenciais nem faz chamadas.
+python -m scripts.evaluate --phase retrieval
+python -m scripts.evaluate --phase answers
+python -m scripts.evaluate --phase answers --model alternate
+```
+
+Após os pré-requisitos e autorização específica, execute nesta ordem:
+
+```bash
+python -m scripts.evaluate --phase retrieval --execute --gateway-verified --extraction-reviewed
+python -m scripts.evaluate --phase answers --execute --gateway-verified --extraction-reviewed
+python -m scripts.evaluate --phase answers --model alternate --execute --gateway-verified --extraction-reviewed
+```
+
+Teto: **8 embeddings** na recuperação, **4 embeddings novos + 12 gerações** no padrão e **zero embeddings + 2 gerações** no alternativo (R1/R7). São **12 embeddings e 14 gerações** no total; contextos são reaproveitados. Não executar também `check_retrieval`, que repetiria consumo. `MAX_OUTPUT_TOKENS` limita cada geração solicitada; não há retentativas automáticas. Código 0 da coleta não significa qualidade aprovada.
+
+As evidências locais já foram preparadas nesta etapa. Em outro checkout, antes das fases reais, execute `python -m scripts.evaluate --phase references --execute` para gerá-las a partir dos quatro PDFs, sem gateway. O comando recusa sobrescrita; para outra rodada, use o mesmo novo `--run-dir data/evals/nova-rodada` em todos os comandos. Perguntas/fontes alteradas ou coleção incompatível exigem nova rodada.
+
+Revise localmente `state.json`, `references.json` e `reviews.json`: compare cada afirmação com o contexto integral efetivamente enviado e com documento/página. Preencha identificação, data, notas e os eixos de fundamentação, referências, completude, limites e segurança. Depois:
+
+```bash
+# Sem modelos; código 0 somente após 7/8 na recuperação e 14 revisões aprovadas.
+python -m scripts.evaluate --phase summary --execute
+```
+
+Uma página recuperada pode conter um trecho pouco útil; a revisão humana verifica isso além do acerto top-4. Não há limiar de similaridade calibrado, avaliador LLM ou estimativa estatística de confiabilidade. Falhas reais devem gerar correção pequena e repetição autorizada dos casos afetados; perguntas/gabaritos não serão ajustados para passar. Nenhuma falha semântica real foi observada nesta entrega, pois os modelos ainda não foram executados.
+
+## Auditoria do conteúdo e histórico Git
+
+```bash
+python -m scripts.audit_git
+git diff --check
+```
+
+A auditoria da Etapa 6 examinou os **5 commits** alcançáveis por refs/reflogs locais (**74 versões de blobs/caminhos**), os **38 arquivos** do índice e a árvore de trabalho não ignorada. Não encontrou credenciais ou artefatos privados pelos padrões verificados. Dois literais sintéticos de URLs nos testes de rejeição foram conferidos e têm exceções exatas. PDFs, `.env`, evidências e índices locais permanecem ignorados. O script imprime somente caminhos, hashes e regras; não lê o `.env` privado ignorado nem valida credenciais em serviços. É uma verificação heurística, limitada ao histórico local disponível e aos formatos reconhecidos.
+
+Se houver segredo real, revogue/rotacione e retire do conteúdo; se estiver no histórico, planeje a limpeza separadamente. Excluir apenas da árvore atual não elimina vazamentos anteriores. Nenhuma reescrita de histórico, commit ou publicação foi realizada nesta etapa.
 
 ## Testes e evidências
 
@@ -364,6 +409,8 @@ Na Etapa 3, em 28/10/2026, foram obtidos **138 testes aprovados** (97 anteriores
 Na Etapa 4, em 28/10/2026, foram obtidos **209 testes aprovados** (138 anteriores e 71 novos), com o mesmo aviso. Os testes de API substituem configuração real e Qdrant e usam o SDK do gateway com HTTP simulado, mantendo o bloqueio de conexões externas. Verificam modelos/padrões, rejeição sem serviços externos, autenticação e segurança OpenAPI, contexto/deduplicação/fontes, limites de entrada/excertos/contexto, perguntas independentes, ausência de geração sem fontes, falhas de base/gateway, JSON/delta/término inválidos, timeout separado por chamada, fechamento e descarte de resposta parcial. Logs da aplicação foram conferidos sem conteúdo privado. Não foram executados modelos reais, ingestão ou publicação. HTML e esquema do Swagger foram verificados em memória; renderização/Authorize no navegador e respostas/fontes reais permanecem pendentes. Esses testes verificam o contrato e a separação das instruções, sem provar a qualidade semântica dos modelos.
 
 Na Etapa 5, em 28/10/2026, o resultado foi **297 testes aprovados** (209 anteriores e 88 novos), com o aviso conhecido do TestClient. Os contratos SSE, autenticação/modelos, fontes equivalentes, contexto vazio, caracteres especiais, término por limite, falhas na abertura/leitura/fechamento, timeout total, cancelamento e capacidade compartilhada foram verificados com substitutos. Os **14 testes HTTP reais** sobem Uvicorn em loopback e provam entrega de um delta com a geração ainda bloqueada no provedor controlado; também verificam desconexão/timeout, rejeição sem chamadas externas e reutilização da vaga. Uma execução registrada mediu primeiro delta em **0,056 s** e `done` em **0,138 s**, com intervalo controlado de 80 ms após receber o delta, sem apresentar esses tempos como benchmark. Os demais testes continuam com conexões externas bloqueadas; os HTTP liberam somente `127.0.0.1`. O cliente de verificação passou por HTTP real com o substituto e seu CLI foi executado apenas no modo de plano. Nenhuma dependência adicionada, modelo real, ingestão ou publicação. Detalhes no [checklist](CHECKLIST.md).
+
+Na Etapa 6, em 28/10/2026, a suíte completa obteve **336 testes aprovados** (297 anteriores e 39 novos), em 9,72 s, com o mesmo aviso. As novas verificações cobrem infraestrutura de avaliação, reutilização dos contextos, fases/modelos, separação entre coleta e julgamento humano, persistência privada, retomada/repetição explícita, incompatibilidades, erros sem conteúdo privado e auditoria de artefatos removidos do histórico. Um teste adicional verifica que instruções em um documento permanecem na mensagem de dados; isso não comprova obediência semântica de modelos reais. A suíte preserva JSON/SSE e as proteções existentes, sem credenciais reais nem consumo de modelos. `pip check` e `git diff --check` passaram. O resumo real local permanece pendente, sem casos de recuperação/resposta executados.
 
 Para repetir as verificações JSON/contexto, sem consumo de modelos:
 
@@ -389,6 +436,6 @@ Pydantic valida entradas/saídas e proíbe campos extras no pedido; `strict=True
 
 SSE e controles da Etapa 5 foram implementados e verificados com substitutos e HTTP local. Nenhuma dimensão real de embedding foi medida e a qualidade real da recuperação/respostas continua pendente. O escopo explícito solicitado para a Etapa 5 esclareceu a inconsistência: o delta local de insuficiência de contexto é a exceção à origem no gateway, registrada no checklist.
 
-O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante esta Etapa 5. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 6. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1 e as evidências privadas da avaliação foram conferidas como ignoradas nesta etapa. A auditoria local está descrita acima.
 
-Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 5 sobre as etapas existentes, sem executar modelos reais.
+O Codex auxiliou na implementação de código, testes e documentação das entregas registradas. Nesta Etapa 6, leu requisitos/checklist/código, reconferiu textualmente páginas das apostilas, elaborou os quatro casos de comportamento, implementou o coletor e a auditoria local e executou testes com substitutos. As evidências textuais ficaram privadas. Não foi usado um LLM como avaliador de respostas; não houve medição de qualidade real nem execução do gateway. Revisões humanas das futuras respostas ainda são necessárias. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados. Nenhuma atividade de publicação ou uso de IA além do registrado é presumida.

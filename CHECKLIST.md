@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 5 implementada e testada com substitutos, incluindo streaming por HTTP real local; gateway, ingestão, recuperação e respostas reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 6–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 6 preparada, documentada e validada com substitutos; avaliação real pendente, sem autorização de consumo**. Etapas 1–5 implementadas, incluindo streaming por HTTP real local com provedor substituto. Gateway/dimensão, revisão da extração, ingestão, recuperação e respostas reais continuam pendentes; esses pré-requisitos não foram presumidos como concluídos. Etapa 7 não iniciada. Os critérios gerais seguem parciais, conforme as evidências abaixo.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -37,7 +37,7 @@ Evidência: leitura integral do PRD e revisão dos dois documentos criados. Nenh
 - [ ] Conferir visualmente páginas com pouco texto, imagens e disposição de tabelas/colunas; não há renderizador de PDF instalado neste ambiente. A inspeção realizada foi textual.
 - [ ] Resolver ou aceitar explicitamente as perdas de extração antes de indexar: 402 caracteres NUL/U+FFFD e sumários com ordem prejudicada. Alternativa apresentada: avaliar `pdfplumber`; nenhuma troca ou biblioteca adicional aplicada.
 - [x] Inicializar repositório Git local por solicitação explícita em 27/10/2026: branch `main`, sem commits nem arquivos adicionados ao índice. `git status`, `git branch --show-current`, `git ls-files` e `git check-ignore` confirmaram o estado inicial e as exclusões de `.env`, `.venv/` e `data/`.
-- [ ] Auditar os arquivos selecionados antes do primeiro commit; ainda não há conteúdo versionado nem histórico para auditar.
+- [ ] Auditar os arquivos selecionados antes do primeiro commit; esta era uma pendência histórica da Etapa 1. A auditoria posterior da Etapa 6 foi executada sobre os cinco commits já existentes e não constitui evidência retroativa de revisão anterior ao primeiro commit.
 
 Evidências de 27/10/2026: Python 3.12.3; FastAPI 0.162.0, Uvicorn 0.54.0, Pydantic 2.14.1, pypdf 6.21.3, pytest 9.1.1 e httpx 0.28.1. `python -m pytest -q`: **32 passed**, com aviso de depreciação de httpx no TestClient. Os 31 testes de processamento/CLI passaram no sandbox; suíte completa e HTTP local exigiram execução fora dele por restrição de sockets. Uvicorn respondeu 200 em `/health`, `/docs` e `/openapi.json` e foi encerrado. Nenhuma chamada de modelos, embedding, gravação vetorial ou publicação. Renderização visual do Swagger não verificada. Totais por documento, amostras e páginas problemáticas estão no [README](README.md).
 
@@ -125,12 +125,37 @@ Critérios relacionados: AC-04, AC-06 (local com substituto), AC-09, AC-10 e AC-
 
 ## Etapa 6 — Avaliar respostas e concluir documentação
 
-- [ ] Completar 12 casos com referências revisadas: oito respondíveis, dois sem suporte, uma tentativa de alterar instruções e uma solicitação clínica individual.
-- [ ] Após planejar chamadas e obter autorização, avaliar o conjunto com o modelo padrão e duas perguntas com o alternativo; repetir somente casos afetados por correções.
-- [ ] Verificar fundamentação, reconhecimento de falta de suporte, preservação das instruções e ausência de diagnóstico/prescrição individual conforme seção 12.2.
-- [ ] Completar testes de erros, autenticação, limites e encerramento de recursos com substitutos.
-- [ ] Completar README com instalação, ingestão, configuração, testes, consumo, decisões, limitações, resultados e uso de IA.
-- [ ] Conferir segredos e artefatos privados no conteúdo versionado e histórico disponível.
+### Preparação concluída
+
+- [x] Conferir entregas anteriores antes de editar: suíte anterior com 297 testes aprovados; código e registros das Etapas 1–5 revisados. Bloqueios reais informados antes da implementação: gateway/dimensão, qualidade da extração e ingestão não confirmados. Sem contradição nova que exija alterar requisitos.
+- [x] Completar 12 casos: R1–R8 preservadas em `evals/retrieval.json`; N1/N2/I1/C1 em `evals/behavior.json`. Perguntas, páginas esperadas, elementos mínimos, comportamento e critérios documentados em `evals/README.md`.
+- [x] Reconferir textualmente as oito páginas físicas dos PDFs; guardar evidências integrais somente em `data/evals/stage6/references.json` (ignorado, modo 0600), com hashes dos quatro documentos. Triagem de N1/N2 sem ocorrências de PostgreSQL/B-tree/Netuno no texto das 257 páginas. Isso não certifica imagens/links nem substitui revisão visual.
+- [x] Preparar `scripts/evaluate.py`, com plano seguro, fases de referências/recuperação/respostas/resumo, funções existentes do RAG, cache privado, ordem das fases, coleta separada da revisão humana e amostra alternativa R1/R7 escolhida antes da execução.
+- [x] Planejar teto da avaliação: **12 embeddings de pergunta + 14 gerações**, sem retentativas; até `MAX_OUTPUT_TOKENS` por geração. Reutilizar as oito recuperações na coleta padrão e R1/R7 no alternativo. Não executar também `check_retrieval`, que repetiria embeddings. Repetições exigem casos explícitos e novo plano/autorização.
+- [x] Completar README com instalação, configuração, preparação/ingestão, testes, autenticação/modelos, JSON/curl -N, base/páginas físicas, decisões, limitações, procedimento/resultados pendentes e uso de IA observado. Publicar somente metadados de resultados, sem prompts/trechos/respostas reais.
+
+### Validação obtida sem modelos
+
+- [x] Revisar cobertura prévia de contratos, erros, autenticação, limites e encerramento; preservar os testes JSON/SSE existentes. Acrescentar teste necessário de instrução dentro de documento mantida como dado, além dos testes do novo coletor e auditoria.
+- [x] Executar suíte completa: **336 passed** (297 anteriores e 39 novos), com um aviso conhecido do TestClient. Nenhuma credencial real ou chamada de modelo na suíte; gateway HTTP simulado, Qdrant sintético/temporário e bloqueio de conexões externas preservados.
+- [x] Verificar fases, teto/reutilização, ordem padrão/alternativo, falta de contexto sem geração, persistência privada, invalidação de contratos/documentos/prompts, conservação de tentativas, retomada sem repetição automática, aprovação humana separada por eixo e rejeição de saídas públicas/links simbólicos.
+- [x] Executar os modos de plano e preparar as referências reais **localmente, sem modelos**. O resumo local informa zero casos recuperados e qualidade `pending`, com saída 1 esperada; não representa 0/8 medido nem resultado simulado de modelo.
+- [x] Auditar árvore de trabalho não ignorada, índice (38 arquivos) e histórico local disponível: **5 commits**, **74 versões de blobs/caminhos**, **45 arquivos atuais**. Nenhum segredo/PDF/artefato privado encontrado pelos padrões verificados. Duas URLs sintéticas em testes de rejeição têm exceções exatas revisadas; nenhuma credencial real foi exibida. PDFs, `.env`, `.venv`, índices e evidências confirmados como ignorados por `git check-ignore`.
+- [x] `pip check` sem incompatibilidades declaradas; `git diff --check` sem problemas. Dependências, PRD, AGENTS e histórico preservados, sem adição ao índice, commit ou publicação.
+
+### Execução real e aceite pendentes
+
+- [ ] Resolver/revisar ou aceitar explicitamente as perdas da extração e realizar a conferência visual geral antes da ingestão.
+- [ ] Confirmar compatibilidade real do gateway e dimensão: teto separado de **2 embeddings + 2 gerações**; ingestão inicial: **até 18 embeddings** para os 285 trechos anteriores. As flags de confirmação não substituem essas verificações ou autorização.
+- [ ] Após pré-requisitos e autorização específica, avaliar recuperação R1–R8: fonte pertinente no top-4 em ao menos 7/8, ou registrar ajustes justificados; conferir utilidade do trecho além do acerto de página.
+- [ ] Coletar os 12 casos no padrão e R1/R7 no alternativo; revisar todas as afirmações materiais, fontes/páginas, completude, limites e segurança conforme seção 12.2. Registrar identificação/data/notas na revisão privada e resultados públicos somente após conferência.
+- [ ] Corrigir falhas reais observadas com mudanças pequenas e repetir apenas os casos afetados após autorização. Não houve avaliação real ou falha semântica observada que justificasse modificar prompt, perguntas, gabaritos ou limiar nesta entrega.
+
+Evidências de **28/10/2026**: `.venv/bin/python -m pytest -q --tb=short --maxfail=3`: **336 passed, 1 warning, 9,72 s**. Após os ajustes finais do coletor/auditoria, os testes pertinentes de avaliação, auditoria e prompts foram repetidos: **42 passed, 1 warning, 2,82 s**. Execução fora do sandbox por restrição de sockets internos e loopback; os 14 testes HTTP controlados continuam restritos a `127.0.0.1`, sem provedor real. Os 39 novos testes verificam infraestrutura/contratos com substitutos, não comportamento semântico dos modelos. `python -m scripts.audit_git`: `no_findings`, com limites heurísticos explícitos, sem sondar credenciais, buscar remotos ou reescrever histórico. A revisão documental e textual das apostilas é evidência distinta dos testes automatizados. A auditoria não garante ausência de formatos desconhecidos, objetos inacessíveis ou histórico remoto não disponível.
+
+Comandos reais preparados em [evals/README.md](evals/README.md): primeiro `python -m scripts.evaluate --phase retrieval --execute --gateway-verified --extraction-reviewed` (**até 8 embeddings**); depois `--phase answers` com as mesmas confirmações (**até 4 embeddings novos + 12 gerações**); por último `--phase answers --model alternate` (**zero embeddings novos + 2 gerações**). Após a revisão humana, `python -m scripts.evaluate --phase summary --execute` não consome modelos e só retorna sucesso com todos os critérios. Teto conjunto incluindo compatibilidade e ingestão inicial pendentes: **32 embeddings + 16 gerações (48 chamadas)**, sem execução nesta entrega. Não repetir verificações manuais antigas adicionalmente sem novo plano de consumo.
+
+Resultados disponíveis em [evals/results.md](evals/results.md): preparação validada, resultados semânticos **pendentes**. Limitações mantidas: conjunto pequeno, glifos/ordem de extração, ausência de interpretação de imagens/áudio/vídeo, trechos separados por página, ausência de limiar calibrado e dependência da revisão humana. A etapa foi encerrada no escopo autorizado sem modelos; o aceite real da seção 12.2 **não está concluído**. Não avançar para publicação.
 
 Aceite: metas da seção 12.2 atendidas e registradas; outra pessoa consegue executar o projeto pelas instruções.
 Critérios relacionados: AC-04, AC-05, AC-07, AC-08, AC-09, AC-10, AC-12, AC-13 e AC-14.
