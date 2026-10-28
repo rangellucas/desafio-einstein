@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 1 implementada e verificada funcionalmente**, com limitações de extração registradas e revisão visual pendente antes de indexar. Etapa 0 concluída; Etapas 2–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 2 implementada e testada com respostas simuladas; compatibilidade real pendente**, conforme solicitação de não executar chamadas reais. Etapas 0–1 implementadas, com limitações de extração e revisão visual pendentes antes de indexar. Etapas 3–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -46,10 +46,16 @@ Critérios relacionados: AC-01 e AC-02 (preparação parcial), AC-08 (documenta�
 
 ## Etapa 2 — Confirmar o contrato do gateway
 
-- [ ] Implementar `gateway.py` e `scripts/check_gateway.py`, sem execução automática.
-- [ ] Planejar até quatro chamadas pequenas: streaming de cada modelo e embeddings de documento e pergunta; executar somente com autorização conforme seção 15.
+- [x] Implementar `gateway.py` e `scripts/check_gateway.py`, sem execução automática.
+- [x] Planejar até quatro chamadas pequenas: dois embeddings sintéticos (`search_document` e `search_query`) e um streaming por modelo, nessa ordem, com retentativas e redirecionamentos desativados. Execução real somente após autorização conforme seção 15; ainda não executada.
+- [x] Testar o SDK instalado com HTTP simulado: payloads, ordenação/validação dos vetores, ambos os modelos, leitura incremental, falhas, timeout, cancelamento, fechamento e proteção dos relatórios.
+- [x] Documentar comando opt-in, variáveis obrigatórias/opcionais e contrato candidato no README e em `.env.example`; modo sem `--execute` mostra apenas o plano, sem ler credenciais.
 - [ ] Confirmar endereço, autenticação, limite de saída, `search_document`/`search_query`, dimensão, formato de retorno e streaming.
 - [ ] Documentar contrato observado; interromper trabalho dependente se houver incompatibilidade não resolvida.
+
+Evidências de 28/10/2026: SDK OpenAI **2.29.0** instalado e fixado, com `httpx 0.28.1` promovido a dependência direta de execução. Assinaturas e recursos assíncronos conferidos no código instalado e documentação oficial. O contrato candidato utiliza Bearer, `max_completion_tokens`, `encoding_format="float"` e `extra_body.input_type`; sua aceitação real não foi confirmada. O adaptador valida o JSON vetorial antes da conversão permissiva do SDK. `python -m scripts.check_gateway` executado somente no modo de plano, sem rede. `python -m pytest -q`: **97 passed** (32 existentes e 65 novos), com o aviso de depreciação do TestClient já conhecido. `pip check` sem incompatibilidades declaradas; `git diff --check` sem problemas. A suíte usa credencial sintética e `httpx.MockTransport`, mantendo a fixture que bloqueia conexões externas; sockets internos de asyncio/TestClient exigiram execução fora do sandbox. Nenhuma chamada real, leitura de credenciais privadas, ingestão, Qdrant, publicação ou commit nesta entrega. Histórico anterior preservado.
+
+O comando real preparado é `python -m scripts.check_gateway --execute`: no máximo **4 requisições**, sem repetição automática; duas gerações solicitam no máximo 600 tokens de saída cada (ou limite configurado menor). Exige `LLM_BASE_URL` e `LLM_API_KEY` exportadas; demais padrões e carregamento manual de `.env` estão no README. `EMBEDDING_DIMENSION` deve permanecer vazia até medição real. Respostas simuladas não concluem o aceite de compatibilidade; a parte dependente da integração permanece pendente.
 
 Aceite: compatibilidade comprovada e parâmetros documentados antes de ingestão completa; sem simular uma integração concluída.
 Critérios relacionados: AC-05 e AC-06 (compatibilidade preliminar), AC-09, AC-14 (registro do contrato).
@@ -142,8 +148,9 @@ Os tamanhos e limites das seções 7, 8 e 11 são pontos de partida, não valore
 
 - [x] **Inspeção textual dos PDFs — Etapa 1:** quatro arquivos fornecidos em `data/raw/`; 65/53/63/76 páginas e 71/60/74/80 trechos, respectivamente na ordem do PRD. Amostras e limitações registradas no README; nenhuma exclusão aplicada.
 - [ ] **Qualidade da extração — antes de indexar:** revisar visualmente páginas de pouco texto e resolver/aceitar os glifos suspeitos e a ordem dos sumários. A leitura textual e o código 0 do dry-run não comprovam completude da base.
-- [ ] **Gateway — Etapa 2:** confirmar contrato efetivo, streaming dos dois modelos, parâmetros de saída e encaminhamento dos tipos de entrada Cohere. Até quatro chamadas pequenas previstas, ainda não executadas nem autorizadas por esta etapa.
+- [ ] **Gateway — Etapa 2:** adaptador e comando implementados e verificados com HTTP simulado. Confirmar contrato efetivo, streaming dos dois modelos, parâmetros de saída e encaminhamento dos tipos de entrada Cohere com até quatro chamadas pequenas; execução real ainda não autorizada nem realizada nesta entrega.
 - [ ] **Dimensão dos embeddings — Etapa 2:** medir a dimensão retornada para documento e pergunta e registrar compatibilidade; validar lotes e coleção na Etapa 3. Nenhum valor presumido.
 - [x] **Versões mínimas — Etapa 1:** dependências diretas fixadas após 32 testes e `pip check`; aviso do TestClient documentado, sem adicionar httpx2.
-- [ ] **Versões e recursos assíncronos — Etapa 2:** verificar SDK do gateway e, na etapa correspondente, cliente Qdrant; não instalados na Etapa 1.
+- [x] **SDK e recursos assíncronos — Etapa 2:** OpenAI 2.29.0 verificado com HTTP simulado, `AsyncOpenAI`, `extra_body`, streaming e fechamento assíncrono. Retentativas desativadas. Compatibilidade com o gateway real continua pendente.
+- [ ] **Cliente Qdrant — Etapa 3:** instalar e verificar recursos assíncronos na etapa correspondente; não instalado nesta entrega.
 - [ ] **Serviços gratuitos — Etapa 7:** confirmar limites e políticas vigentes ao preparar a publicação e documentar recuperação/reingestão. Nenhuma infraestrutura criada na Etapa 0.
