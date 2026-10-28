@@ -6,9 +6,11 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError
 
 from app.config import EXPECTED_DOCUMENTS, GatewaySettings, VectorSettings
-from app.gateway import create_gateway_client
+from app.gateway import GatewayContractError, create_gateway_client
+from app.vector_store import BaseUnavailable
 from scripts import evaluate
 from test_chat import event, hit
 
@@ -41,10 +43,15 @@ def evaluation(tmp_path, monkeypatch):
     async def handle(request):
         body = json.loads(request.content)
         requests.append(body)
-        if fail:
+        if fail and isinstance(fail[0], Exception):
+            raise fail[0]
+        if fail and isinstance(fail[0], httpx.Response):
+            response = fail[0]
+        elif fail:
             raise RuntimeError("PRIVATE PROVIDER DETAIL")
-        response = httpx.Response(200, headers={"content-type": "text/event-stream"},
-                                 content=event("PRIVATE SYNTHETIC ANSWER [S1]", "stop"))
+        else:
+            response = httpx.Response(200, headers={"content-type": "text/event-stream"},
+                                     content=event("PRIVATE SYNTHETIC ANSWER [S1]", "stop"))
         responses.append(response)
         return response
 
@@ -120,10 +127,12 @@ def test_failed_generation_never_retries_implicitly_and_preserves_attempts(evalu
     run, _, _, collect, retrieval, requests, fail, _ = evaluation
     collect("retrieval")
     fail.append(True)
-    with pytest.raises(ValueError, match="evaluation_case_failed"):
+    with pytest.raises(ValueError, match="gateway_connection_failed"):
         collect("answers", selected=["R1"])
     state = evaluate.read(run / "state.json")
     assert state["answers"][0]["status"] == "failed"
+    assert state["answers"][0]["error"] == "gateway_connection_failed"
+    assert state["answers"][0]["error_stage"] == "generation"
     assert "PRIVATE PROVIDER DETAIL" not in json.dumps(state)
     collect("answers", selected=["R1"])
     assert len(requests) == 1
@@ -253,3 +262,117 @@ def test_cli_collection_success_does_not_imply_quality_pass(evaluation, monkeypa
     assert json.loads(capsys.readouterr().out)["quality_status"] == "pending"
     assert evaluate.main(["--phase", "summary", "--execute", "--run-dir", str(run)]) == 1
     assert json.loads(capsys.readouterr().out)["quality_status"] == "pending"
+
+
+@pytest.mark.parametrize("error,expected", [
+    (TimeoutError("PRIVATE DETAIL"), "gateway_timeout"),
+    (APITimeoutError(request=httpx.Request("POST", "https://synthetic.test")), "gateway_timeout"),
+    (httpx.ReadTimeout("PRIVATE DETAIL"), "gateway_timeout"),
+    (APIConnectionError(message="PRIVATE DETAIL", request=httpx.Request("POST", "https://synthetic.test")), "gateway_connection_failed"),
+    (httpx.ConnectError("PRIVATE DETAIL"), "gateway_connection_failed"),
+    (GatewayContractError("chat_completion_invalid"), "chat_completion_invalid"),
+    (GatewayContractError("chat_missing_finish_reason"), "chat_missing_finish_reason"),
+    (GatewayContractError("PRIVATE DETAIL"), "gateway_contract_invalid"),
+    (GatewayContractError(["PRIVATE DETAIL"]), "gateway_contract_invalid"),
+    (APIError("PRIVATE DETAIL", httpx.Request("POST", "https://synthetic.test"), body={"private": "PRIVATE BODY"}), "gateway_response_invalid"),
+    (json.JSONDecodeError("PRIVATE DETAIL", "PRIVATE BODY", 0), "gateway_response_invalid"),
+    (BaseUnavailable("PRIVATE DETAIL"), "base_unavailable"),
+    (OSError("PRIVATE FILE PATH"), "evaluation_storage_failed"),
+    (ValueError("PRIVATE DETAIL"), "evaluation_case_failed"),
+])
+def test_failure_codes_never_copy_exception_details(error, expected):
+    assert evaluate.failure_code(error) == expected
+    assert expected in evaluate.FAILURE_CODES
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 408, 422, 429, 500, 502, 503, 504])
+def test_http_error_code_only_contains_validated_status(status):
+    response = httpx.Response(status, request=httpx.Request("POST", "https://synthetic.test"))
+    error = APIStatusError("PRIVATE DETAIL", response=response, body={"private": "PRIVATE BODY"})
+    assert evaluate.failure_code(error) == f"gateway_http_{status}"
+    error.status_code = "PRIVATE STATUS"
+    assert evaluate.failure_code(error) == "gateway_response_invalid"
+
+
+@pytest.mark.parametrize("failure,expected", [
+    (httpx.Response(401, json={"error": {"message": "PRIVATE PROVIDER DETAIL"}}), "gateway_http_401"),
+    (httpx.Response(429, json={"error": {"message": "PRIVATE PROVIDER DETAIL"}}), "gateway_http_429"),
+    (httpx.Response(503, json={"error": {"message": "PRIVATE PROVIDER DETAIL"}}), "gateway_http_503"),
+    (httpx.ReadTimeout("PRIVATE PROVIDER DETAIL"), "gateway_timeout"),
+    (httpx.Response(200, headers={"content-type": "text/event-stream"}, content=event(None, "stop")), "chat_completion_invalid"),
+    (httpx.Response(200, headers={"content-type": "text/event-stream"}, content=event("PRIVATE PARTIAL ANSWER")), "chat_missing_finish_reason"),
+    (httpx.Response(200, headers={"content-type": "text/event-stream"}, content=b"data: PRIVATE PROVIDER DETAIL\n\n"), "chat_response_invalid"),
+])
+def test_failed_case_diagnostic_reaches_cli_and_state_without_retry(evaluation, monkeypatch, capsys, failure, expected):
+    run, cases, alternate, collect, retrieval, requests, fail, _ = evaluation
+    collect("retrieval")
+    fail.append(failure)
+    with pytest.raises(ValueError, match=f"^{expected}$"):
+        collect("answers", selected=["R1"])
+    state = evaluate.read(run / "state.json")
+    attempt = state["answers"][-1]
+    assert attempt["error"] == expected and attempt["error_stage"] == "generation"
+    assert not {"answer", "messages", "sources"} & attempt.keys()
+    assert retrieval.await_count == 8 and len(requests) == 1
+    report = collect("answers", selected=["R1"])
+    assert len(requests) == 1  # Exibir o diagnóstico não repete a chamada que falhou.
+    row = next(r for r in report["cases"] if r["id"] == "R1" and r["model"] == "azure/gpt-5-mini")
+    assert row["error"] == expected and row["error_stage"] == "generation"
+    assert report["quality_status"] == "pending"
+    monkeypatch.setattr(evaluate, "execute", AsyncMock(side_effect=ValueError(expected)))
+    assert evaluate.main(["--phase", "answers", "--execute", "--gateway-verified", "--extraction-reviewed", "--run-dir", str(run)]) == 1
+    output = capsys.readouterr().out
+    assert json.loads(output) == {"status": "failed", "error": expected}
+    assert "PRIVATE" not in output + json.dumps(report)
+    assert "PRIVATE PROVIDER DETAIL" not in json.dumps(state)
+    assert "PRIVATE PARTIAL ANSWER" not in json.dumps(state)
+
+
+def test_preparation_and_retrieval_failures_have_their_own_stage(evaluation, monkeypatch):
+    run, _, _, collect, retrieval, requests, *_ = evaluation
+    collect("retrieval")
+    def fail_preparation(*args):
+        raise ValueError("PRIVATE DETAIL")
+    monkeypatch.setattr(evaluate, "build_messages", fail_preparation)
+    with pytest.raises(ValueError, match="evaluation_case_failed"):
+        collect("answers", selected=["R1"])
+    assert evaluate.read(run / "state.json")["answers"][-1]["error_stage"] == "preparation"
+    retrieval.side_effect = BaseUnavailable("PRIVATE DETAIL")
+    with pytest.raises(ValueError, match="base_unavailable"):
+        collect("answers", selected=["N1"])
+    attempt = evaluate.read(run / "state.json")["answers"][-1]
+    assert attempt["error_stage"] == "retrieval" and attempt["error"] == "base_unavailable"
+    assert not requests
+
+
+def test_legacy_failure_does_not_gain_an_invented_cause(evaluation):
+    run, cases, alternate, collect, *_ = evaluation
+    collect("retrieval")
+    state = evaluate.read(run / "state.json")
+    state["answers"] = [{"case_id": "R1", "model": "azure/gpt-5-mini", "status": "failed", "error": "evaluation_case_failed"}]
+    report = evaluate.summary(state, cases, alternate, {})
+    row = next(r for r in report["cases"] if r["id"] == "R1" and r["model"] == "azure/gpt-5-mini")
+    assert row["error"] == "evaluation_case_failed"
+    assert "error_stage" not in row
+    state["answers"][0].update(error="PRIVATE DETAIL", error_stage="PRIVATE STAGE")
+    assert "PRIVATE" not in json.dumps(evaluate.summary(state, cases, alternate, {}))
+
+
+def test_persistence_failure_is_categorized_without_new_generation(evaluation, monkeypatch):
+    run, _, _, collect, _, requests, *_ = evaluation
+    collect("retrieval")
+    original_save = evaluate.save
+
+    def fail_review_save(path, value):
+        if path.name == "reviews.json":
+            raise OSError("PRIVATE FILE PATH")
+        original_save(path, value)
+
+    monkeypatch.setattr(evaluate, "save", fail_review_save)
+    with pytest.raises(ValueError, match="evaluation_storage_failed"):
+        collect("answers", selected=["R1"])
+    attempt = evaluate.read(run / "state.json")["answers"][-1]
+    assert attempt["status"] == "failed"
+    assert attempt["error"] == "evaluation_storage_failed" and attempt["error_stage"] == "persistence"
+    collect("answers", selected=["R1"])
+    assert len(requests) == 1

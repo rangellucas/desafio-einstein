@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 6 preparada, documentada e validada com substitutos; avaliação real pendente, sem autorização de consumo**. Etapas 1–5 implementadas, incluindo streaming por HTTP real local com provedor substituto. Gateway/dimensão, revisão da extração, ingestão, recuperação e respostas reais continuam pendentes; esses pré-requisitos não foram presumidos como concluídos. Etapa 7 não iniciada. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 6 com recuperação real em 7/8 e coleta de respostas interrompida em R1; aceite semântico pendente**. Após a entrega inicial, o usuário informou sucesso do gateway (dimensão 1536) e da ingestão; forneceu o resultado de recuperação abaixo. O diagnóstico do coletor foi corrigido e validado sem novas chamadas reais. Os registros das entregas iniciais abaixo preservam suas pendências históricas; as evidências posteriores estão na atualização da Etapa 6. Etapa 7 não iniciada.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -159,6 +159,15 @@ Resultados disponíveis em [evals/results.md](evals/results.md): preparação va
 
 Aceite: metas da seção 12.2 atendidas e registradas; outra pessoa consegue executar o projeto pelas instruções.
 Critérios relacionados: AC-04, AC-05, AC-07, AC-08, AC-09, AC-10, AC-12, AC-13 e AC-14.
+
+### Atualização após execução manual e ajuste de diagnóstico — 28/10/2026
+
+- [x] Registrar evidências fornecidas pelo usuário, sem atribuí-las à suíte: gateway aprovado em quatro chamadas (dois embeddings com dimensão **1536** e streaming dos dois modelos com `stop`); ingestão informada como concluída; recuperação real com **7/8** fontes esperadas no top-4, R7 sem acerto. A meta numérica foi atingida; a utilidade dos trechos e a qualidade das respostas ainda exigem revisão.
+- [x] Conferir somente metadados do estado privado, sem expor textos ou acessar credenciais: oito contextos preservados e uma tentativa de R1 no padrão, com `evaluation_case_failed`. A tentativa antiga não conservou a causa original; não é possível reconstruí-la com segurança.
+- [x] Corrigir somente o diagnóstico em `scripts/evaluate.py`: códigos permitidos para timeout, conexão, status HTTP 400–599, violações do contrato, indisponibilidade da base e falha de persistência. Registrar fase da falha e apresentar o código seguro no terminal/resumo, sem mensagens brutas, URLs, cabeçalhos ou conteúdo privado. Preservar compatibilidade com falhas antigas, cache, assinatura da geração e ausência de repetição automática.
+- [x] Validar com substitutos: **60 testes do avaliador aprovados**; suíte completa **370 passed, 1 warning, 10,46 s** (34 novos sobre os 336 anteriores). Cobertura inclui SDK com HTTP simulado, falhas de geração/preparação/recuperação/persistência, privacidade do diagnóstico, ausência de retentativa implícita e regressão JSON/SSE. O aviso é a depreciação conhecida do TestClient. Execução fora do sandbox para sockets internos/loopback, mantendo bloqueio de conexões externas.
+- [x] `git diff --check` sem problemas; auditoria local `no_findings` em seis commits disponíveis e 45 arquivos do índice. Nenhuma dependência adicionada, alteração do RAG/prompts/modelos/limites, modificação das evidências privadas, chamada real, publicação ou commit neste ajuste.
+- [ ] Obter diagnóstico real de R1 numa repetição específica autorizada e concluir as respostas/revisões. Com o contexto existente, `python -m scripts.evaluate --phase answers --cases R1 --repeat --execute --gateway-verified --extraction-reviewed` pode fazer **zero embeddings e até uma geração** com o teto de saída configurado. Comando preparado, **não executado** neste ajuste; autorização concedida apenas para código e testes. A amostra alternativa continua bloqueada até a coleta dos 12 casos padrão.
 
 ## Etapa 7 — Publicar e verificar
 

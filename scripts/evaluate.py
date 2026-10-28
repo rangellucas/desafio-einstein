@@ -13,27 +13,61 @@ import tempfile
 from typing import Any
 from uuid import uuid4
 
-from openai import AsyncOpenAI
+import httpx
+from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError, AsyncOpenAI
 from qdrant_client import AsyncQdrantClient
 
 from app.config import EXPECTED_DOCUMENTS, RAW_PDF_DIR, GatewaySettings, VectorSettings, load_gateway_settings, load_vector_settings
-from app.gateway import create_gateway_client
+from app.gateway import GatewayContractError, create_gateway_client
 from app.ingestion import extract_pages
 from app.prompts import GENERATION_INSTRUCTIONS, INSUFFICIENT_CONTEXT, build_context, build_messages
 from app.rag import collect_answer, open_answer, retrieve_chunks
-from app.vector_store import create_vector_client, check_ready, collection_contract, validate_collection
+from app.vector_store import BaseUnavailable, create_vector_client, check_ready, collection_contract, validate_collection
 from scripts.check_retrieval import load_cases
 
 ROOT = Path(__file__).resolve().parent.parent
 PRIVATE_ROOT = ROOT / "data" / "evals"
 BEHAVIOR_PATH = ROOT / "evals" / "behavior.json"
+GATEWAY_CONTRACT_CODES = {
+    "embedding_response_invalid", "embedding_count_mismatch", "embedding_indices_invalid",
+    "embedding_vector_invalid", "embedding_dimension_mismatch", "chat_choices_invalid",
+    "chat_sequence_invalid", "chat_content_invalid", "chat_finish_reason_invalid",
+    "chat_missing_finish_reason", "chat_response_invalid", "chat_completion_invalid",
+}
+FAILURE_CODES = GATEWAY_CONTRACT_CODES | {
+    "gateway_timeout", "gateway_connection_failed", "gateway_contract_invalid",
+    "gateway_response_invalid", "base_unavailable", "evaluation_case_failed", "evaluation_storage_failed",
+} | {f"gateway_http_{status}" for status in range(400, 600)}
+FAILURE_STAGES = {"retrieval", "preparation", "generation", "persistence"}
 SAFE_ERRORS = {
     "private_run_directory_required", "private_path_symlink", "references_already_exist_use_new_run",
     "unsupported_case_requires_review", "references_suite_changed_use_new_run", "evaluation_suite_changed_use_new_run",
     "reference_documents_differ_from_collection", "embedding_dimension_configuration_mismatch", "collection_changed_use_new_run",
     "default_model_changed_use_new_run", "complete_retrieval_phase_first", "collect_default_model_first",
     "generation_changed_repeat_affected_cases_explicitly", "evaluation_case_failed",
-}
+} | FAILURE_CODES
+
+
+def failure_code(error: Exception) -> str:
+    """Classifica sem copiar mensagens, corpos, URLs ou cabeçalhos externos."""
+    if isinstance(error, (TimeoutError, APITimeoutError, httpx.TimeoutException)):
+        return "gateway_timeout"
+    if isinstance(error, APIStatusError):
+        status = error.status_code
+        return f"gateway_http_{status}" if type(status) is int and 400 <= status < 600 else "gateway_response_invalid"
+    if isinstance(error, (APIConnectionError, httpx.TransportError)):
+        return "gateway_connection_failed"
+    if isinstance(error, GatewayContractError):
+        # Mesmo uma exceção local só pode publicar códigos explicitamente conhecidos.
+        code = error.args[0] if len(error.args) == 1 else None
+        return code if isinstance(code, str) and code in GATEWAY_CONTRACT_CODES else "gateway_contract_invalid"
+    if isinstance(error, (APIError, json.JSONDecodeError)):
+        return "gateway_response_invalid"
+    if isinstance(error, BaseUnavailable):
+        return "base_unavailable"
+    if isinstance(error, OSError):
+        return "evaluation_storage_failed"
+    return "evaluation_case_failed"
 
 
 def digest(value: object) -> str:
@@ -195,7 +229,14 @@ def summary(state: dict[str, Any], cases: list[dict[str, Any]], alternate: list[
             quality = "passed"
         else:
             quality = "pending"
-        rows.append({"id": case["id"], "model": model, "collection": answer.get("status", "pending"), "review": quality, "axes": axes})
+        row = {"id": case["id"], "model": model, "collection": answer.get("status", "pending"), "review": quality, "axes": axes}
+        if answer.get("status") == "failed":
+            code = answer.get("error")
+            row["error"] = code if isinstance(code, str) and code in FAILURE_CODES else "evaluation_case_failed"
+            stage = answer.get("error_stage")
+            if isinstance(stage, str) and stage in FAILURE_STAGES:
+                row["error_stage"] = stage
+        rows.append(row)
     quality = "failed" if any(r["review"] == "failed" for r in rows) or (retrieved == 8 and hits < 7) else "pending"
     if retrieved == 8 and hits >= 7 and all(r["review"] == "passed" for r in rows):
         quality = "passed"
@@ -239,26 +280,32 @@ async def collect(
             state["answers"].append(record)
         # Persiste a intenção antes do consumo: interrupção não refaz geração silenciosamente.
         save(run / "state.json", state)
+        stage = "retrieval"
         try:
             async with asyncio.timeout(settings.request_timeout_seconds):
                 prepared = await context_for(case, state, store, vector, gateway, settings)
+                stage = "persistence"
                 save(run / "state.json", state)
                 if record is not None:
+                    stage = "preparation"
                     messages = build_messages(case["question"], prepared["context"])
                     if prepared["sources"]:
+                        stage = "generation"
                         async with open_answer(gateway, settings, model, messages, request_id="evaluation") as parts:
                             answer, reason = await collect_answer(parts)
                     else:
                         answer, reason = INSUFFICIENT_CONTEXT, "insufficient_context"
+                    stage = "persistence"
                     record.update(status="collected", answer=answer, finish_reason=reason,
                                   messages=messages, sources=prepared["sources"])
                     reviews[record["id"]] = review_template(case)
                     save(run / "reviews.json", reviews)
-        except Exception:
+        except Exception as exc:
+            code = failure_code(exc)
             if record is not None:
-                record.update(status="failed", error="evaluation_case_failed")
+                record.update(status="failed", error=code, error_stage=stage)
             save(run / "state.json", state)
-            raise ValueError("evaluation_case_failed") from None
+            raise ValueError(code) from None
         save(run / "state.json", state)
     return summary(state, cases, alternate, reviews)
 
