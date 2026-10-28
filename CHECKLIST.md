@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 3 implementada e testada com respostas simuladas; ingestão e recuperação reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 4–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 4 implementada e testada com substitutos; gateway, ingestão, recuperação e respostas reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 5–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -83,11 +83,18 @@ Critérios relacionados: AC-01, AC-02, AC-03, AC-09, AC-10 (falhas da base), AC-
 
 ## Etapa 4 — Resposta JSON e escolha do modelo
 
-- [ ] Implementar `/models`, `/chat`, contratos, prompt e fluxo compartilhado de RAG.
-- [ ] Acrescentar autenticação simples, validação e tratamento de falhas externas.
-- [ ] Testar os dois identificadores pela mesma integração com substitutos, rejeitando entradas inválidas antes de chamadas externas.
-- [ ] Verificar resposta/fontes no Swagger, independência das perguntas e insuficiência de contexto sem geração.
-- [ ] Realizar somente verificações reais planejadas e autorizadas.
+- [x] Implementar `/models` com lista/padrão da configuração, sem consultar o gateway; `/chat` com contratos e preparação de RAG compartilhável com a futura SSE.
+- [x] Implementar contexto de até 8.000 caracteres, deduplicação exata, IDs/fontes por documento e página física, excertos de até 600 caracteres e instruções educacionais com citações e insuficiência de informação.
+- [x] Acrescentar Bearer opcional no desenvolvimento e exigido quando configurado, suporte a Authorize no Swagger, validação estrita e erros públicos 401/422/502/503/504 sem detalhes privados.
+- [x] Compartilhar e fechar clientes no lifespan; acumular JSON pelo adaptador de geração existente, preservando `stop`/`length`, sem segunda integração ou histórico.
+- [x] Testar ambos os modelos e padrão alternativo pelo SDK com HTTP simulado; rejeitar corpo/modelo/autenticação inválidos antes de prontidão, embedding, busca e geração.
+- [x] Verificar contratos, esquema OpenAPI, fontes, independência, contexto vazio sem geração, falhas do Qdrant/gateway, timeout por chamada, fechamento e logs sem conteúdo privado com substitutos.
+- [x] Documentar configuração, caminho da pergunta e teste JSON no Swagger/terminal no README; preservar a restrição de zero chamadas reais, sem ingestão ou publicação.
+- [ ] Conferir visualmente Swagger/Authorize no navegador e resposta/fontes com base/gateway reais após resolver pré-requisitos e autorizar consumo. HTML e esquema foram verificados em memória; não equivalem a essa conferência.
+
+Evidências de 28/10/2026: `python -m pytest -q`: **209 passed** (138 anteriores e 71 novos), com o aviso conhecido de depreciação do TestClient. A suíte completa executou fora do sandbox para permitir sockets internos de asyncio/TestClient, mantendo a fixture que bloqueia conexões externas. As fixtures da API substituem também os carregadores de configuração, sem ler credenciais reais; Qdrant remoto é substituído e o gateway passa pelo SDK real com `httpx.MockTransport`. Foram verificados os dois identificadores, padrão inicial/alternativo, pergunta normalizada de até 1.500 caracteres, tipos/campos inválidos, fontes e deduplicação, limite do contexto/excertos, ausência de geração sem fontes, base indisponível sem consumo, falhas na busca, HTTP/limite/conexão/timeout do provedor, JSON/delta/término malformados, interrupção durante leitura sem resposta parcial e fechamento dos recursos. `length` é preservado e motivos de ferramentas/filtro não viram sucesso. Logs de aplicação foram conferidos sem perguntas, respostas, trechos ou tokens sintéticos. `pip check`: sem incompatibilidades declaradas; `git diff --check`: sem problemas.
+
+Limites: não houve chamada real, ingestão privada, publicação, criação de commit ou alteração de PRD/AGENTS. Não foi realizada avaliação semântica dos prompts ou das respostas reais. O teste manual preparado para Swagger consiste em **três consultas** (dois modelos explícitos e padrão omitido), com teto de **6 chamadas ao gateway** (3 embeddings e 3 gerações de até `MAX_OUTPUT_TOKENS` cada), ainda não executadas. A confirmação prévia do gateway e a base completa continuam necessárias. Timeout **total**, concorrência/429 da aplicação, desconexão do consumidor e rota SSE permanecem na Etapa 5; nesta etapa há timeout separado de embedding/geração e fechamento de seus recursos.
 
 Aceite: resposta JSON e fontes disponíveis; modelos não permitidos rejeitados; falta de conteúdo diferenciada de falha de infraestrutura.
 Critérios relacionados: AC-03, AC-04, AC-05, AC-07, AC-08, AC-09 e AC-10 (parcial).

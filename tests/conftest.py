@@ -8,6 +8,20 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 
 @pytest.fixture(autouse=True)
+def isolate_api_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """O lifespan dos testes nunca lê configuração/credenciais do ambiente real."""
+    from app.config import ApiSettings
+    import app.main as main
+
+    def unavailable():
+        raise ValueError("synthetic_unconfigured")
+
+    monkeypatch.setattr(main, "load_api_settings", lambda: ApiSettings())
+    monkeypatch.setattr(main, "load_gateway_settings", unavailable)
+    monkeypatch.setattr(main, "load_vector_settings", unavailable)
+
+
+@pytest.fixture(autouse=True)
 def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Os testes comuns falham se algum caminho tentar abrir uma conexão."""
     def deny(*args: object, **kwargs: object) -> None:

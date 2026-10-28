@@ -12,15 +12,32 @@ CHAT_MODELS = ("azure/gpt-5-mini", "azure/gpt-6-luna")
 EMBEDDING_MODEL = "cohere/embed-v4.0"
 
 
-class GatewaySettings(BaseModel):
-    """Validação local; instanciar não abre conexões nem carrega arquivos .env."""
+class ModelSettings(BaseModel):
+    """Lista pública validada sem depender de credenciais do gateway."""
 
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
-    base_url: str
-    api_key: SecretStr = Field(repr=False)
     chat_models: tuple[str, ...] = CHAT_MODELS
     default_chat_model: str = CHAT_MODELS[0]
+
+    @model_validator(mode="after")
+    def validate_models(self) -> "ModelSettings":
+        if len(self.chat_models) != 2 or set(self.chat_models) != set(CHAT_MODELS):
+            raise ValueError("CHAT_MODELS deve conter os dois identificadores do PRD, sem duplicatas.")
+        if self.default_chat_model not in self.chat_models:
+            raise ValueError("DEFAULT_CHAT_MODEL deve pertencer a CHAT_MODELS.")
+        return self
+
+
+class ApiSettings(ModelSettings):
+    access_token: SecretStr | None = Field(default=None, repr=False)
+
+
+class GatewaySettings(ModelSettings):
+    """Validação local; instanciar não abre conexões nem carrega arquivos .env."""
+
+    base_url: str
+    api_key: SecretStr = Field(repr=False)
     embedding_model: str = EMBEDDING_MODEL
     embedding_dimension: int | None = Field(default=None, gt=0)
     max_output_tokens: int = Field(default=600, gt=0)
@@ -45,24 +62,36 @@ class GatewaySettings(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_models(self) -> "GatewaySettings":
-        if len(self.chat_models) != 2 or set(self.chat_models) != set(CHAT_MODELS):
-            raise ValueError("CHAT_MODELS deve conter os dois identificadores do PRD, sem duplicatas.")
-        if self.default_chat_model not in self.chat_models:
-            raise ValueError("DEFAULT_CHAT_MODEL deve pertencer a CHAT_MODELS.")
+    def validate_embedding_model(self) -> "GatewaySettings":
         if self.embedding_model != EMBEDDING_MODEL:
             raise ValueError("EMBEDDING_MODEL deve usar o identificador do PRD.")
         return self
 
 
+def model_configuration(env: Mapping[str, str]) -> dict[str, object]:
+    return {
+        "chat_models": tuple(item.strip() for item in env.get("CHAT_MODELS", ",".join(CHAT_MODELS)).split(",")),
+        "default_chat_model": env.get("DEFAULT_CHAT_MODEL", CHAT_MODELS[0]),
+    }
+
+
+def load_api_settings(environ: Mapping[str, str] | None = None) -> ApiSettings:
+    env = os.environ if environ is None else environ
+    token = env.get("API_ACCESS_TOKEN", "")
+    if token and not token.strip():
+        raise ValueError("API_ACCESS_TOKEN não pode conter apenas espaços.")
+    return ApiSettings.model_validate({
+        **model_configuration(env), "access_token": SecretStr(token) if token else None,
+    })
+
+
 def load_gateway_settings(environ: Mapping[str, str] | None = None) -> GatewaySettings:
-    """Lê o ambiente somente quando solicitado pelo comando explícito."""
+    """Lê o ambiente quando solicitado; não abre conexões nem carrega .env."""
     env = os.environ if environ is None else environ
     return GatewaySettings.model_validate({
         "base_url": env.get("LLM_BASE_URL", ""),
         "api_key": SecretStr(env.get("LLM_API_KEY", "")),
-        "chat_models": tuple(item.strip() for item in env.get("CHAT_MODELS", ",".join(CHAT_MODELS)).split(",")),
-        "default_chat_model": env.get("DEFAULT_CHAT_MODEL", CHAT_MODELS[0]),
+        **model_configuration(env),
         "embedding_model": env.get("EMBEDDING_MODEL", EMBEDDING_MODEL),
         "embedding_dimension": env.get("EMBEDDING_DIMENSION") or None,
         "max_output_tokens": env.get("MAX_OUTPUT_TOKENS", "600"),
@@ -84,6 +113,8 @@ EXPECTED_DOCUMENTS = (
 
 EMBEDDING_BATCH_SIZE = 16
 SEARCH_LIMIT = 4
+MAX_CONTEXT_CHARS = 8000
+MAX_EXCERPT_CHARS = 600
 # Alterar ao mudar extração, limpeza ou divisão; usar uma nova coleção.
 PIPELINE_VERSION = "pypdf-6.21.3-pages-v1"
 

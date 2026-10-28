@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import json
 import math
 from typing import Literal, TypedDict
 
@@ -54,7 +55,10 @@ async def embed_texts(
         extra_body={"input_type": input_type},
     )
     # Validar o JSON antes de conversões permissivas do SDK (ex.: bool para float).
-    payload: object = response.http_response.json()
+    try:
+        payload: object = response.http_response.json()
+    except ValueError:
+        raise GatewayContractError("embedding_response_invalid") from None
     if not isinstance(payload, dict):
         raise GatewayContractError("embedding_response_invalid")
     data = payload.get("data")
@@ -85,16 +89,18 @@ async def iter_chat_parts(stream: AsyncStream[ChatCompletionChunk]) -> AsyncIter
     """Gerador: yield repassa cada fragmento; nunca acumula para subdividir a resposta."""
     finished = False
     async for chunk in stream:
-        if chunk.choices == []:
+        choices = getattr(chunk, "choices", None)
+        if choices == []:
             # Alguns provedores enviam metadados de uso sem choices ao final.
             continue
-        if not isinstance(chunk.choices, list) or len(chunk.choices) != 1:
+        if not isinstance(choices, list) or len(choices) != 1:
             raise GatewayContractError("chat_choices_invalid")
-        choice = chunk.choices[0]
-        if choice.index != 0 or finished:
+        choice = choices[0]
+        delta = getattr(choice, "delta", None)
+        if getattr(choice, "index", None) != 0 or finished or delta is None:
             raise GatewayContractError("chat_sequence_invalid")
-        text = choice.delta.content
-        reason = choice.finish_reason
+        text = getattr(delta, "content", None)
+        reason = getattr(choice, "finish_reason", None)
         if text is not None and not isinstance(text, str):
             raise GatewayContractError("chat_content_invalid")
         if reason is not None and reason not in {"stop", "length", "content_filter", "tool_calls", "function_call"}:
@@ -121,4 +127,7 @@ async def open_chat_stream(
         model=model, messages=messages, stream=True, max_completion_tokens=limit,
     )
     async with stream:
-        yield iter_chat_parts(stream)
+        try:
+            yield iter_chat_parts(stream)
+        except json.JSONDecodeError:
+            raise GatewayContractError("chat_response_invalid") from None

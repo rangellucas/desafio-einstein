@@ -1,39 +1,56 @@
-"""API mínima; o ciclo de vida compartilha somente o cliente vetorial."""
+"""API JSON; clientes compartilhados e fechados no ciclo de vida, sem ingestão."""
 
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from collections.abc import AsyncIterator
+import logging
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
-from app.config import load_vector_settings
+from app.config import load_api_settings, load_gateway_settings, load_vector_settings
+from app.gateway import create_gateway_client
+from app.routes import router
 from app.vector_store import check_ready, create_vector_client
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    try:
+        application.state.api_settings = load_api_settings()
+    except (ValidationError, ValueError):
+        raise ValueError("Configuração inválida: confira CHAT_MODELS, DEFAULT_CHAT_MODEL e API_ACCESS_TOKEN.") from None
     application.state.vector_client = None
     application.state.vector_settings = None
-    try:
-        settings = load_vector_settings()
-        if settings.url or settings.path.is_dir():
-            application.state.vector_client = create_vector_client(settings)
-            application.state.vector_settings = settings
-    except Exception:
-        # /health permanece útil mesmo se configuração, disco ou lock falharem.
-        pass
-    try:
+    application.state.gateway_client = None
+    application.state.gateway_settings = None
+    async with AsyncExitStack() as resources:
+        try:
+            settings = load_vector_settings()
+            if settings.url or settings.path.is_dir():
+                client = create_vector_client(settings)
+                resources.push_async_callback(client.close)
+                application.state.vector_client = client
+                application.state.vector_settings = settings
+        except Exception:
+            # /health permanece útil mesmo se configuração, disco ou lock falharem.
+            logging.getLogger(__name__).warning("vector_initialization_unavailable")
+        try:
+            gateway_settings = load_gateway_settings()
+            gateway = await resources.enter_async_context(create_gateway_client(gateway_settings))
+            application.state.gateway_client = gateway
+            application.state.gateway_settings = gateway_settings
+        except Exception:
+            logging.getLogger(__name__).warning("gateway_initialization_unavailable")
         yield
-    finally:
-        if application.state.vector_client is not None:
-            await application.state.vector_client.close()
 
 app = FastAPI(
     title="Consulta educacional sobre Saúde Mental",
-    description="Consulta educacional: processo e prontidão da base. Chat ainda não disponível.",
-    version="0.3.0", lifespan=lifespan,
+    description="Consulta educacional independente com resposta JSON e fontes por página física. Não realiza diagnóstico ou prescrição.",
+    version="0.4.0", lifespan=lifespan,
 )
+app.include_router(router)
 
 
 @app.get("/health", summary="Verificar se o processo responde")

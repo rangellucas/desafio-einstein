@@ -1,6 +1,6 @@
 # Consulta educacional sobre Saúde Mental
 
-Implementação das **Etapas 1–3** do [PRD](PRD.md): inspeção local de PDFs, adaptador do gateway, indexação retomável em Qdrant, recuperação e `/ready`. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real da recuperação permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
+Implementação das **Etapas 1–4** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consulta JSON autenticada em `/chat`. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
 
 ## Instalação e execução
 
@@ -24,7 +24,7 @@ curl --fail http://127.0.0.1:8000/openapi.json
 
 `/health` retorna `{"status":"ok"}` e indica apenas que o processo responde. Abra `http://127.0.0.1:8000/docs` no navegador para acessar o Swagger. O HTML e o esquema foram verificados por HTTP; a renderização do Swagger no navegador não foi conferida nesta execução e usa os assets padrão do FastAPI, hospedados em CDN.
 
-A rota `/health` e o dry-run não exigem credenciais. `/ready` usa somente a configuração vetorial; sem configuração válida, retorna 503 e mantém `/health` e `/docs` disponíveis. [.env.example](.env.example) documenta as variáveis. Não preencha segredos no exemplo versionado. Nenhum módulo carrega `.env` automaticamente.
+A rota `/health` e o dry-run não exigem credenciais. `/models` usa somente a lista/padrão configurados, sem consultar o gateway. `/ready` usa somente a configuração vetorial; sem configuração válida, retorna 503 e mantém `/health` e `/docs` disponíveis. [.env.example](.env.example) documenta as variáveis. Não preencha segredos no exemplo versionado. Nenhum módulo carrega `.env` automaticamente.
 
 ## Gateway: implementação simulada e verificação real pendente
 
@@ -144,7 +144,7 @@ O comando de ingestão consulta IDs antes de cada lote de até 16 trechos, confe
 
 O relatório mantém o resumo de extração dos quatro documentos e acrescenta contagens previstas, reutilizadas e gravadas, total de chamadas tentadas e falhas categorizadas. Não imprime textos, vetores, URL, perguntas ou erros brutos de serviços. Código 0 da execução exige contagens finais compatíveis com o manifesto dos quatro documentos; execução parcial retorna 1. Erros de configuração indicam nomes das variáveis inválidas, sem valores; falhas ao abrir o armazenamento retornam código público genérico por segurança.
 
-`app/rag.py:retrieve_chunks` valida a pergunta, confirma prontidão antes de consumir modelos, faz um único embedding `search_query` e consulta os quatro primeiros resultados, com documento e página. Não aplica limiar de confiança. Montagem do contexto, geração e rotas de chat pertencem à Etapa 4.
+`app/rag.py:retrieve_chunks` valida a pergunta, confirma prontidão antes de consumir modelos, faz um único embedding `search_query` e consulta os quatro primeiros resultados, com documento e página. Não aplica limiar de confiança. A Etapa 4 acrescenta preparação do contexto e geração JSON sobre essa recuperação.
 
 `GET /ready` é público e retorna `{"status":"ready"}` com 200 somente quando a coleção é compatível e as contagens total e por documento correspondem ao manifesto. Ausência de configuração/coleção, base vazia/parcial/incompatível, lock local ou falha do Qdrant resultam em 503 com `detail.code="base_unavailable"`, mensagem pública e `request_id`. Não chama o gateway nem modifica a base. O código não trata indisponibilidade como falta de conteúdo.
 
@@ -214,6 +214,66 @@ Exporte as variáveis no terminal ou carregue manualmente seu `.env` privado com
 
 Os padrões dos modelos de chat e `MAX_OUTPUT_TOKENS=600` bastam para a verificação prévia da Etapa 2. `API_ACCESS_TOKEN`, `MAX_CONCURRENT_REQUESTS` e `PORT` não são usados pelos comandos da Etapa 3. Sem dimensão/coleção válidas, a API mantém a saúde do processo e responde 503 em `/ready`.
 
+## Resposta JSON e Swagger — Etapa 4
+
+`GET /models` retorna `models` (lista permitida) e `default_model` (padrão). Esses valores vêm de `CHAT_MODELS` e `DEFAULT_CHAT_MODEL`, validados pela mesma configuração usada no gateway. A rota é pública e funciona sem chave do gateway, coleção ou dimensão. Lista/padrão inválidos impedem a inicialização com mensagem pública sem valores de entrada. Não há consulta ao catálogo do provedor.
+
+`POST /chat` aceita somente `question` e `model`. A pergunta deve ser string, conter de 1 a 1.500 caracteres após `strip()` e não pode ser vazia. `model` omitido ou `null` usa o padrão; string vazia ou identificador desconhecido é rejeitado. Campos extras e tipos incompatíveis retornam 422. Autenticação e validação são concluídas antes de prontidão, embedding, busca ou geração.
+
+Configure `API_ACCESS_TOKEN` no ambiente privado para exigir `Authorization: Bearer <token-da-aplicação>`. Esse token é independente de `LLM_API_KEY`. Ausência ou valor incorreto resulta em 401 com `WWW-Authenticate: Bearer`. Sem token configurado, o desenvolvimento local permite consultas; na publicação ele deverá estar preenchido. `/health`, `/ready`, `/models`, `/docs` e `/openapi.json` permanecem públicos. O token não pode conter somente espaços.
+
+O ciclo de vida abre e compartilha os clientes do gateway e do Qdrant, sem chamadas de modelos ou criação de coleção. Configuração ausente ou falha ao abrir uma dependência mantém as rotas públicas disponíveis; `/chat` retorna 503. O encerramento fecha ambos os clientes, inclusive se outro fechamento falhar. Reinicie a API após mudar as variáveis ou preparar uma base local antes ausente.
+
+O fluxo de uma pergunta passa por estas funções:
+
+1. `routes.authenticate` verifica o Bearer e cria `request_id`; `ChatRequest` valida e normaliza o corpo. `routes.chat` resolve e valida o modelo.
+2. `rag.prepare_answer` chama `retrieve_chunks`: confere dimensão/prontidão, gera um embedding `search_query` e busca top-4 no Qdrant. Falha da base retorna erro, sem ser convertida em contexto vazio.
+3. `prompts.build_context` remove textos exatamente duplicados e limita o contexto a 8.000 caracteres, contando cabeçalhos e separadores. Cada bloco recebe `[S1]`, documento e página física. As fontes correspondem somente aos blocos efetivamente incluídos; cada `excerpt` contém até 600 caracteres, enquanto o texto enviado ao modelo pode ser maior.
+4. `prompts.build_messages` cria instruções fixas de sistema e uma mensagem de dados com pergunta/contexto. Não há histórico. O prompt exige português, fundamentação, referências fornecidas e reconhecimento de insuficiência; impede diagnóstico/prescrição individual e orienta ajuda humana/emergência local em relato de risco imediato. Perguntas e documentos não podem substituir as regras da aplicação.
+5. Com fontes, `rag.generate_answer` usa `gateway.open_chat_stream`, o mesmo adaptador para ambos os modelos. Acumula os fragmentos para uma resposta JSON completa e fecha o stream. Sem fontes, retorna explicação local com `sources: []` e `finish_reason: "insufficient_context"`, sem geração.
+6. `routes.chat` retorna `request_id`, `model`, `answer`, `sources` e `finish_reason`. `stop` indica término normal e `length` indica corte pelo limite de saída. Motivos de ferramenta/filtro, ausência de término, resposta vazia ou malformada não são apresentados como sucesso.
+
+As fontes são os trechos disponibilizados ao modelo; sua presença não prova a fundamentação de cada frase. As regras do prompt também não garantem ausência de alucinação: a avaliação real continua pendente.
+
+Erros controlados retornam `detail` com `code`, `message` pública e `request_id`. A validação de corpo usa o formato padrão do FastAPI. Base ausente/incompatível ou Qdrant indisponível retorna 503; falha/resposta inválida do gateway retorna 502; conexão indisponível, HTTP 429 ou 5xx do provedor retorna 503; timeout de chamada do gateway retorna 504. Mensagens brutas do provedor não são devolvidas. Não há retentativa automática nem fallback para outro modelo.
+
+Nesta etapa, `REQUEST_TIMEOUT_SECONDS` limita separadamente o embedding e a geração (incluindo leitura e fechamento do stream). Qdrant remoto mantém timeout de 15 segundos por operação. O prazo total de consulta, o limite de concorrência/429 da aplicação, o tratamento de desconexão do consumidor e `/chat/stream` pertencem à Etapa 5. `MAX_CONCURRENT_REQUESTS` ainda não é aplicado. O JSON usa streaming somente entre backend e gateway; isso não constitui uma rota SSE pública.
+
+Os logs de `app.rag`/`app.routes` em nível INFO contêm somente metadados: identificador, etapa/tempos, rota, modelo, quantidade de fontes e resultado/motivo de término ou erro categorizado. Não incluem perguntas, respostas, contexto, credenciais ou mensagens brutas de dependências. Não registram uso de tokens ausente. O nível/handler de logging fica a cargo do executor; a aplicação não ativa logs detalhados de SDKs.
+
+### Validação manual preparada, sem execução real nesta entrega
+
+Para verificar rotas públicas e o Swagger sem consumir modelos:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Em outro terminal:
+
+```bash
+curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/models
+curl --fail http://127.0.0.1:8000/openapi.json
+```
+
+Abra `http://127.0.0.1:8000/docs`. Confira a lista em **GET /models**. Se o token estiver configurado, clique em **Authorize**, informe somente o token da aplicação (sem escrever `Bearer`) e confirme. Expanda **POST /chat**, clique em **Try it out** e use o exemplo de pergunta. O esquema documenta o contrato, páginas físicas, autenticação e erros.
+
+Executar uma consulta válida pode consumir modelos. **Antes de testar respostas reais**, conclua a confirmação do gateway/dimensão, a revisão da extração e a ingestão da Etapa 3, e autorize o consumo. Plano manual: **três consultas**, uma com `azure/gpt-5-mini`, outra com `azure/gpt-6-luna` e outra omitindo `model`; no máximo **6 chamadas de modelos** (3 embeddings e 3 gerações, até `MAX_OUTPUT_TOKENS` por geração). Contexto vazio evita a geração; falhas interrompem a consulta. Esses testes não foram executados aqui.
+
+No Swagger, confira `model`, `answer`, referências `[S1]`, `sources` com documento/página/excerto e `finish_reason`. Perguntas são independentes. Uma alternativa pelo terminal, para **uma das três consultas já planejadas**, é:
+
+```bash
+API_URL=http://127.0.0.1:8000
+curl --fail-with-body "$API_URL/chat" \
+  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{"question":"Como a atenção primária participa do cuidado em saúde mental?","model":"azure/gpt-5-mini"}'
+```
+
+Altere o modelo para `azure/gpt-6-luna` na segunda consulta e remova a propriedade na terceira. Sem base pronta, espere 503; isso não equivale ao sucesso com `insufficient_context`. Não simule contexto vazio apagando a coleção. A ausência de resultados é exercitada com substituto nos testes. Entradas inválidas, por exemplo `{"question":"   "}` ou modelo `"inexistente"`, e acesso sem Bearer quando configurado devem falhar sem serviços externos.
+
 ## Testes e evidências
 
 ```bash
@@ -228,22 +288,32 @@ Na Etapa 2, o resultado final em 28/10/2026 foi **97 testes aprovados** (32 exis
 
 Na Etapa 3, em 28/10/2026, foram obtidos **138 testes aprovados** (97 anteriores e 41 novos), com o mesmo aviso. As novas verificações usam quatro PDFs sintéticos, gateway HTTP simulado e Qdrant temporário; incluem persistência após reabrir o diretório, payloads e páginas, IDs estáveis, limite de lote, retomada após falha, repetição sem novos embeddings, incompatibilidades sem perda de dados, cobertura por documento, avaliação/ranks simulados, nomes de variáveis inválidas sem valores e `/ready` com fechamento do cliente. O caminho remoto passou pelo SDK e por `httpx.MockTransport`, incluindo criação de coleção com metadados, consulta de IDs, upsert, contagem e busca; nenhum servidor remoto real foi acessado. O dry-run real reconfirmou 285 trechos e teto de 18 chamadas; `scripts.check_retrieval` foi executado apenas no modo de plano. Nenhuma nota de relevância real foi produzida.
 
+Na Etapa 4, em 28/10/2026, foram obtidos **209 testes aprovados** (138 anteriores e 71 novos), com o mesmo aviso. Os testes de API substituem configuração real e Qdrant e usam o SDK do gateway com HTTP simulado, mantendo o bloqueio de conexões externas. Verificam modelos/padrões, rejeição sem serviços externos, autenticação e segurança OpenAPI, contexto/deduplicação/fontes, limites de entrada/excertos/contexto, perguntas independentes, ausência de geração sem fontes, falhas de base/gateway, JSON/delta/término inválidos, timeout separado por chamada, fechamento e descarte de resposta parcial. Logs da aplicação foram conferidos sem conteúdo privado. Não foram executados modelos reais, ingestão ou publicação. HTML e esquema do Swagger foram verificados em memória; renderização/Authorize no navegador e respostas/fontes reais permanecem pendentes. Esses testes verificam o contrato e a separação das instruções, sem provar a qualidade semântica dos modelos.
+
+Para repetir apenas as verificações novas, sem consumo de modelos:
+
+```bash
+python -m pytest -q tests/test_chat.py tests/test_prompts.py
+```
+
 `pip check`: nenhuma incompatibilidade declarada. A combinação instalada emite um aviso de depreciação de `httpx` no TestClient do Starlette; os testes passam. Não foi adicionada a biblioteca alternativa `httpx2`, que não faz parte das dependências aprovadas.
 
 A suíte completa precisou executar fora do sandbox: a criação de sockets internos de asyncio/TestClient fica bloqueada nele; o bloqueio de conexões externas dos testes permaneceu ativo. Na Etapa 1, os 31 testes de processamento e CLI também passaram dentro do sandbox. Separadamente naquela etapa, Uvicorn foi iniciado em `127.0.0.1` e respondeu HTTP 200 em `/health`, `/docs` e `/openapi.json`; foi encerrado ao final. Essa verificação também precisou da permissão de socket local. Na Etapa 3 houve somente gravação de dados sintéticos em Qdrant temporário. Nenhuma chamada real de modelo, indexação dos PDFs privados ou publicação foi executada.
 
 ## Responsabilidades e pendências
 
-`app/main.py` cria a API, `/health`, `/ready` e o ciclo de vida do cliente vetorial. `app/config.py` valida as configurações; `app/ingestion.py` extrai, divide, cria IDs e coordena a indexação; `app/vector_store.py` concentra validação, persistência e busca; `app/rag.py` coordena prontidão, embedding da pergunta e recuperação. Os comandos de `scripts/` chamam essas funções e apresentam relatórios. `app/gateway.py` preserva a única integração de modelos e seu contrato candidato. `TypedDict` descreve registros/relatórios, sem classes de serviço.
+`app/main.py` cria a API, `/health`, `/ready` e o ciclo de vida de ambos os clientes. `app/config.py` valida as configurações; `app/ingestion.py` extrai, divide, cria IDs e coordena a indexação; `app/vector_store.py` concentra validação, persistência e busca; `app/rag.py` prepara a consulta e acumula a geração JSON. `app/routes.py` trata autenticação e erros HTTP; `app/schemas.py` define contratos Pydantic; `app/prompts.py` limita/formata o contexto e prepara as instruções. Os comandos de `scripts/` chamam essas funções e apresentam relatórios. `app/gateway.py` preserva a única integração de modelos e seu contrato candidato. `TypedDict` descreve registros/relatórios, sem classes de serviço.
 
 A extração e a rota de saúde continuam síncronas. O FastAPI executa a rota `def` em seu pool de threads. O PDF é aberto com `with` e fechado após a extração. A API não executa ingestão durante importação, inicialização, atendimento ou encerramento.
 
-`async def` define operações que podem suspender durante I/O; `await` aguarda os SDKs sem bloquear o ciclo de eventos nas chamadas de rede. O modo Qdrant local executa trabalho em memória/disco no próprio processo e não garante I/O não bloqueante. `asyncio.run` cria e encerra o ciclo nos comandos; clientes são reutilizados e fechados com `async with` ou `finally`. `asyncio.timeout` limita cada chamada de embeddings. O `lifespan` é um gerador assíncrono gerenciado por `asynccontextmanager`: antes de `yield`, abre um cliente Qdrant compartilhado quando a configuração/base local permite; depois de `yield`, fecha-o no encerramento. Nenhuma coleção é criada nesse ciclo. Para mudar a configuração ou abrir uma base local criada posteriormente, reinicie a API.
+`async def` define operações que podem suspender durante I/O; `await` aguarda os SDKs sem bloquear o ciclo de eventos nas chamadas de rede. O modo Qdrant local executa trabalho em memória/disco no próprio processo e não garante I/O não bloqueante. `asyncio.run` cria e encerra o ciclo nos comandos. `asyncio.timeout` limita separadamente embedding e geração JSON. O `lifespan` é um gerador assíncrono gerenciado por `asynccontextmanager`: antes de `yield`, abre os clientes compartilhados quando a configuração permite; `yield` cede o atendimento ao FastAPI; na saída, `AsyncExitStack` encerra os recursos na ordem inversa, mesmo se algum fechamento falhar. Nenhuma coleção é criada nesse ciclo. Para mudar a configuração ou abrir uma base local criada posteriormente, reinicie a API.
 
-No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream` usa `yield` para disponibilizar o iterador dentro de `async with` e fecha o stream ao sair. Esse adaptador já existia na Etapa 2; o cliente do gateway ainda não é aberto pela API e as rotas de resposta pertencem às próximas etapas.
+No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream` usa `yield` para disponibilizar o iterador dentro de `async with` e fecha o stream ao sair. `generate_answer` acumula esses fragmentos com lista e `"".join`, sem criar uma segunda integração. Preparação de contexto/mensagens e adaptador permanecem disponíveis para a futura rota SSE.
 
-`/models`, chat, autenticação da API e rotas SSE ainda não foram implementados. Nenhuma dimensão real de embedding foi medida. A qualidade real da recuperação e das respostas ainda não foi avaliada. A inconsistência SSE registrada no checklist continua pendente para a Etapa 5 e não afeta a Etapa 3.
+Pydantic valida entradas/saídas e proíbe campos extras no pedido; `strict=True` evita converter números em perguntas/modelos. `SecretStr` oculta tokens nas representações; a comparação Bearer usa `hmac.compare_digest` com bytes UTF-8. `set` remove duplicatas de texto preservando a primeira ocorrência pela lista de blocos. `Literal` restringe motivos públicos de término. Não foram criadas classes de serviço ou adicionadas dependências.
 
-O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 3. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+As rotas SSE e os controles da Etapa 5 ainda não foram implementados. Nenhuma dimensão real de embedding foi medida. A qualidade real da recuperação e das respostas ainda não foi avaliada. A inconsistência SSE registrada no checklist continua pendente para a Etapa 5 e não afeta o contrato JSON.
 
-Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 3 sobre as etapas existentes, sem executar modelos reais.
+O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 4. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+
+Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 4 sobre as etapas existentes, sem executar modelos reais.
