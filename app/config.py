@@ -3,9 +3,10 @@
 from collections.abc import Mapping
 import os
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator, model_validator
 
 CHAT_MODELS = ("azure/gpt-5-mini", "azure/gpt-6-luna")
 EMBEDDING_MODEL = "cohere/embed-v4.0"
@@ -80,3 +81,61 @@ EXPECTED_DOCUMENTS = (
     "sma-saude-mental-na-atencao-primaria-uTvcWzgG.pdf",
     "sma-desenvolvendo-os-cuidados-de-saude-mental-na-aps-kJpr4dDC 2.pdf",
 )
+
+EMBEDDING_BATCH_SIZE = 16
+SEARCH_LIMIT = 4
+# Alterar ao mudar extração, limpeza ou divisão; usar uma nova coleção.
+PIPELINE_VERSION = "pypdf-6.21.3-pages-v1"
+
+
+class VectorSettings(BaseModel):
+    """Uma dimensão medida é obrigatória para abrir a base; sem valor presumido."""
+
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
+
+    url: str | None = None
+    api_key: SecretStr | None = Field(default=None, repr=False)
+    path: Path = Path("data/qdrant")
+    collection: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
+    dimension: int = Field(gt=0)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str | None) -> str | None:
+        return GatewaySettings.validate_url(value) if value else None
+
+    @model_validator(mode="after")
+    def validate_remote(self) -> "VectorSettings":
+        if self.url and (self.api_key is None or not self.api_key.get_secret_value().strip()):
+            raise ValueError("QDRANT_API_KEY é obrigatória no modo remoto.")
+        return self
+
+
+def load_vector_settings(environ: Mapping[str, str] | None = None) -> VectorSettings:
+    env = os.environ if environ is None else environ
+    return VectorSettings.model_validate({
+        "url": env.get("QDRANT_URL") or None,
+        "api_key": SecretStr(env["QDRANT_API_KEY"]) if env.get("QDRANT_API_KEY") else None,
+        "path": env.get("QDRANT_PATH") or "data/qdrant",
+        "collection": env.get("QDRANT_COLLECTION", ""),
+        "dimension": env.get("EMBEDDING_DIMENSION") or None,
+    })
+
+
+def invalid_variable_names(error: ValidationError, scope: Literal["gateway", "vector"]) -> list[str]:
+    """Extrai só nomes de campos; nunca inclui inputs, contextos ou mensagens brutas."""
+    names = {
+        "gateway": {
+            "base_url": "LLM_BASE_URL", "api_key": "LLM_API_KEY", "chat_models": "CHAT_MODELS",
+            "default_chat_model": "DEFAULT_CHAT_MODEL", "embedding_model": "EMBEDDING_MODEL",
+            "embedding_dimension": "EMBEDDING_DIMENSION", "max_output_tokens": "MAX_OUTPUT_TOKENS",
+            "request_timeout_seconds": "REQUEST_TIMEOUT_SECONDS",
+        },
+        "vector": {
+            "url": "QDRANT_URL", "api_key": "QDRANT_API_KEY", "path": "QDRANT_PATH",
+            "collection": "QDRANT_COLLECTION", "dimension": "EMBEDDING_DIMENSION",
+        },
+    }[scope]
+    fallback = "QDRANT_URL/QDRANT_API_KEY" if scope == "vector" else "CHAT_MODELS/DEFAULT_CHAT_MODEL/EMBEDDING_MODEL"
+    return sorted({names.get(str(item["loc"][0]), fallback) if item["loc"] else fallback
+                   for item in error.errors(include_input=False, include_context=False)})

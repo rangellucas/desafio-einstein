@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 2 implementada e testada com respostas simuladas; compatibilidade real pendente**, conforme solicitação de não executar chamadas reais. Etapas 0–1 implementadas, com limitações de extração e revisão visual pendentes antes de indexar. Etapas 3–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 3 implementada e testada com respostas simuladas; ingestão e recuperação reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 4–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -62,12 +62,21 @@ Critérios relacionados: AC-05 e AC-06 (compatibilidade preliminar), AC-09, AC-1
 
 ## Etapa 3 — Indexar e recuperar
 
-- [ ] Implementar Qdrant local/remoto, validação de coleção/dimensão, IDs determinísticos, retomada e lotes.
-- [ ] Revisar dry-run e quantidade prevista de chamadas antes da ingestão autorizada.
-- [ ] Conferir relatório dos quatro documentos e rastreabilidade dos trechos.
-- [ ] Verificar que repetir a ingestão não duplica pontos nem recalcula embeddings existentes e que incompatibilidades não apagam dados.
-- [ ] Criar oito perguntas respondíveis, duas por documento, com referências conferidas; avaliar primeiro apenas a recuperação.
-- [ ] Implementar `/ready`, sem consumir modelos.
+- [x] Implementar Qdrant local/remoto, validação de coleção/dimensão, IDs determinísticos, retomada e lotes de até 16; sem dimensão presumida e sem apagar/recriar coleções existentes.
+- [x] Revisar dry-run e quantidade prevista de chamadas: quatro PDFs, 257 páginas, 285 trechos, teto de 18 chamadas de embeddings de documentos; nenhuma ingestão real executada.
+- [x] Conferir relatório e rastreabilidade com quatro PDFs sintéticos e armazenamento temporário; contagens reais de extração reconferidas, sem indexação.
+- [ ] Conferir relatório de ingestão e rastreabilidade dos quatro PDFs reais após resolver os pré-requisitos e autorizar execução.
+- [x] Verificar com substitutos que repetir a ingestão não duplica pontos nem recalcula embeddings persistidos; retomada após falha, preservação de dados em incompatibilidades e fechamento de clientes verificados.
+- [x] Criar oito perguntas respondíveis, duas por documento, em `evals/retrieval.json`; páginas físicas conferidas por leitura textual dos PDFs em 28/10/2026, com elementos esperados e limitações. Sem trechos extraídos versionados; conferência visual geral segue pendente.
+- [x] Implementar avaliação opt-in apenas da recuperação e testar sua apuração com vetores sintéticos, sem declarar relevância real.
+- [ ] Executar avaliação real e verificar fonte pertinente no top-4 em pelo menos sete das oito perguntas, ou justificar ajustes; requer ingestão completa e autorização.
+- [x] Implementar `/ready`, sem consumir modelos: 200 para coleção compatível/completa; 503 público e sem detalhes privados em configuração ausente, coleção ausente/parcial/incompatível ou falha de acesso.
+
+Evidências de 28/10/2026: `qdrant-client==1.19.1` instalado e fixado, sem FastEmbed, servidor local ou outro SDK de modelos. Recursos assíncronos, metadados e persistência conferidos no código instalado, documentação oficial e testes. `python -m pytest -q`: **138 passed** (97 anteriores e 41 novos), com o aviso conhecido de depreciação do TestClient. A suíte usa PDFs/vetores/credenciais sintéticos, `httpx.MockTransport` para gateway e REST do Qdrant e armazenamento local temporário; bloqueio de conexões externas preservado. Execução fora do sandbox necessária para sockets internos de asyncio/TestClient. Persistência após reabertura, IDs/payloads, lotes, retomada parcial, zero embeddings na repetição completa, rejeição de dimensão/modelo/versão/distância/documentos incompatíveis, contagens por documento, proteção dos relatórios, indicação de variáveis inválidas sem valores e ciclo de vida do cliente da API verificados. `pip check` sem incompatibilidades; `git diff --check` sem problemas.
+
+`python -m scripts.ingest --dry-run` executado nos PDFs locais, sem gateway/Qdrant, reconfirmando os totais 71/60/74/80 trechos por documento. `python -m scripts.check_retrieval` executado somente no modo de plano, sem ler credenciais. Comandos reais preparados no README: compatibilidade prévia `python -m scripts.check_gateway --execute` (**até 4 chamadas**, duas de embeddings e duas gerações); após revisão da extração, ingestão `python -m scripts.ingest --execute --gateway-verified --extraction-reviewed --max-embedding-calls 18` (**até 18 embeddings**); avaliação `python -m scripts.check_retrieval --execute --gateway-verified` (**até 8 embeddings de perguntas**, zero geração). Total da Etapa 3: **até 26 chamadas de embeddings**; incluindo a compatibilidade pendente: **até 30 chamadas ao gateway**. Operações Qdrant: até 47 na ingestão inicial e 71 na avaliação (locais ou REST conforme modo); `/ready` acrescenta até sete por requisição, sem modelos. As opções de confirmação atestam revisões já realizadas, sem substituí-las.
+
+Limites: gateway, dimensão medida, servidor Qdrant remoto, ingestão privada e meta semântica **ainda não verificados**. As páginas usadas nos casos foram conferidas textualmente; as perdas de extração e a revisão visual da base continuam pendentes. Nenhuma leitura de credenciais privadas por ferramentas, chamada real de modelo, indexação dos PDFs reais, publicação ou commit nesta entrega. PRD e histórico preservados.
 
 Aceite: quatro documentos processados; retomada verificada; fonte pertinente entre os quatro primeiros resultados em pelo menos sete das oito perguntas, ou ajustes justificados e registrados.
 Critérios relacionados: AC-01, AC-02, AC-03, AC-09, AC-10 (falhas da base), AC-14 (resultados de recuperação).
@@ -152,5 +161,5 @@ Os tamanhos e limites das seções 7, 8 e 11 são pontos de partida, não valore
 - [ ] **Dimensão dos embeddings — Etapa 2:** medir a dimensão retornada para documento e pergunta e registrar compatibilidade; validar lotes e coleção na Etapa 3. Nenhum valor presumido.
 - [x] **Versões mínimas — Etapa 1:** dependências diretas fixadas após 32 testes e `pip check`; aviso do TestClient documentado, sem adicionar httpx2.
 - [x] **SDK e recursos assíncronos — Etapa 2:** OpenAI 2.29.0 verificado com HTTP simulado, `AsyncOpenAI`, `extra_body`, streaming e fechamento assíncrono. Retentativas desativadas. Compatibilidade com o gateway real continua pendente.
-- [ ] **Cliente Qdrant — Etapa 3:** instalar e verificar recursos assíncronos na etapa correspondente; não instalado nesta entrega.
+- [x] **Cliente Qdrant — Etapa 3:** versão 1.19.1 instalada e fixada; recursos assíncronos, persistência/metadados locais e REST simulada verificados. A compatibilidade do servidor remoto real (incluindo metadados de coleção) segue pendente.
 - [ ] **Serviços gratuitos — Etapa 7:** confirmar limites e políticas vigentes ao preparar a publicação e documentar recuperação/reingestão. Nenhuma infraestrutura criada na Etapa 0.

@@ -1,6 +1,6 @@
 # Consulta educacional sobre Saúde Mental
 
-Implementação das **Etapas 1 e 2** do [PRD](PRD.md): API mínima, inspeção local de PDFs e adaptador do gateway com verificação explícita. A Etapa 2 foi testada com respostas simuladas; a compatibilidade real permanece pendente. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
+Implementação das **Etapas 1–3** do [PRD](PRD.md): inspeção local de PDFs, adaptador do gateway, indexação retomável em Qdrant, recuperação e `/ready`. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real da recuperação permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
 
 ## Instalação e execução
 
@@ -24,7 +24,7 @@ curl --fail http://127.0.0.1:8000/openapi.json
 
 `/health` retorna `{"status":"ok"}` e indica apenas que o processo responde. Abra `http://127.0.0.1:8000/docs` no navegador para acessar o Swagger. O HTML e o esquema foram verificados por HTTP; a renderização do Swagger no navegador não foi conferida nesta execução e usa os assets padrão do FastAPI, hospedados em CDN.
 
-A API mínima e o dry-run não leem credenciais nem exigem arquivo `.env`. [.env.example](.env.example) documenta a configuração do comando do gateway e das etapas futuras. Não preencha segredos no exemplo versionado. Nenhum módulo carrega `.env` automaticamente.
+A rota `/health` e o dry-run não exigem credenciais. `/ready` usa somente a configuração vetorial; sem configuração válida, retorna 503 e mantém `/health` e `/docs` disponíveis. [.env.example](.env.example) documenta as variáveis. Não preencha segredos no exemplo versionado. Nenhum módulo carrega `.env` automaticamente.
 
 ## Gateway: implementação simulada e verificação real pendente
 
@@ -88,7 +88,7 @@ O relatório JSON contém quantidade de chamadas tentadas, checks concluídos, d
 
 Mesmo uma execução com código `0` só confirma a aceitação do formato e o comportamento observado nesses quatro casos. Não comprova que o gateway respeita semanticamente `input_type` ou o teto de saída; conferir também o contrato do fornecedor. Contagens e tempos não provam ausência de buffering na futura rota HTTP da aplicação. Essa prova pertence à Etapa 5, com Uvicorn e cliente progressivo. O comando não é executado no startup, ingestão, build, testes comuns ou CI.
 
-**Estado em 28/10/2026:** testes com substitutos aprovados; endereço, credencial, aceitação dos parâmetros, dimensão e streaming dos modelos reais ainda não verificados. Em caso de incompatibilidade, registrar o erro categorizado, revisar o contrato com o fornecedor e planejar nova execução autorizada antes de continuar a parte dependente. Nenhuma ingestão ou implementação da Etapa 3 foi iniciada.
+**Estado em 28/10/2026:** testes com substitutos aprovados; endereço, credencial, aceitação dos parâmetros, dimensão e streaming dos modelos reais ainda não verificados. Em caso de incompatibilidade, registrar o erro categorizado, revisar o contrato com o fornecedor e planejar nova execução autorizada antes de continuar a parte dependente. A Etapa 3 foi implementada com substitutos; nenhuma ingestão real foi executada.
 
 ## Extração e dry-run
 
@@ -103,11 +103,11 @@ python -m scripts.ingest --dry-run --input-dir /caminho/dos/pdfs
 
 O comando usa `pypdf`, normaliza espaços e quebras de linha, e divide cada página em trechos de até 1.200 caracteres, com 200 de sobreposição. Prefere limites de parágrafo ou frase quando permitem avanço. Não remove cabeçalhos, rodapés, páginas curtas nem caracteres suspeitos. A sobreposição pode começar no meio de uma palavra; conteúdos que continuam em outra página ficam separados.
 
-Cada trecho em memória mantém `document_name`, página física a partir de 1, `chunk_index` a partir de 0, texto e offsets `start`/`end` no texto normalizado. IDs, hash, versão do pipeline e metadados de embeddings serão implementados na Etapa 3. Não há indexação nesta entrega.
+Cada trecho mantém `document_name`, página física a partir de 1, `chunk_index` a partir de 0, texto e offsets `start`/`end` no texto normalizado. A preparação acrescenta `chunk_id` e `document_id` UUID determinísticos, `document_hash` SHA-256, `pipeline_version` e `embedding_model`. A identidade inclui documento, hash do arquivo e do texto, página, posição, versão e parâmetros de divisão. Nenhum vetor é calculado no dry-run.
 
 O relatório JSON mostra contagens por documento e página, páginas sem texto, páginas curtas (menos de 80 caracteres não vazios), páginas com NUL/U+FFFD e posições sugeridas de amostra. O limite de 80 é apenas uma heurística de triagem. Ele não detecta toda perda de conteúdo, colunas desordenadas ou imagens. Nenhum texto extraído é impresso ou salvo pelo comando. PDFs e demais dados locais ficam excluídos pelo `.gitignore`.
 
-O modo sem `--dry-run` é rejeitado com código 2. Arquivos ausentes, ilegíveis, criptografados ou sem páginas geram falhas e código 1; os outros arquivos continuam sendo inspecionados. Código 0 significa que os quatro arquivos foram lidos, **sem certificar qualidade ou completude do conteúdo**. `manual_review_required` permanece verdadeiro. O comando não importa SDK de modelos nem cliente Qdrant, não abre conexões e não grava os documentos ou trechos.
+É obrigatório escolher `--dry-run` ou `--execute`; o segundo exige as confirmações e o orçamento descritos abaixo. Arquivos ausentes, ilegíveis, criptografados, sem páginas ou sem trechos geram falhas e código 1; os outros arquivos continuam sendo inspecionados. Código 0 no dry-run significa que os quatro arquivos foram lidos, **sem certificar qualidade ou completude do conteúdo**. `manual_review_required` permanece verdadeiro. O dry-run não lê credenciais, cria clientes, abre conexões ou grava documentos/trechos. O relatório inclui o teto de chamadas de embeddings, sem descontar pontos que eventualmente já existam na base.
 
 ## Inspeção real em 27/10/2026
 
@@ -134,6 +134,86 @@ Limitações observadas, sem reproduzir trechos privados:
 
 Antes de indexar, é necessário resolver ou aceitar explicitamente as perdas observadas, incluindo a conferência visual das páginas de pouco texto. A alternativa prevista no PRD é **avaliar `pdfplumber`** para comparar extração/ordem e mapeamento de glifos; não foi instalada nem se presume que corrigirá os problemas. Se páginas relevantes forem escaneadas, OCR exige revisão explícita do escopo. `pypdf` permanece como única biblioteca de PDF nesta entrega.
 
+## Indexação, recuperação e prontidão — Etapa 3
+
+O projeto usa `qdrant-client==1.19.1`, sem FastEmbed nem inferência automática. O [cliente oficial](https://github.com/qdrant/qdrant-client) oferece armazenamento local; a [documentação assíncrona](https://qdrant.tech/documentation/tutorials-develop/async-api/) orienta o uso de `AsyncQdrantClient`. As assinaturas, a persistência dos metadados e os formatos REST foram conferidos na versão instalada e com substitutos. O servidor remoto precisa suportar metadados de coleção; essa compatibilidade ainda não foi verificada em um cluster real.
+
+`app/vector_store.py` abre o diretório local ou o endpoint remoto conforme a configuração. A coleção usa um vetor por trecho e distância de cosseno. Seus metadados guardam modelo, dimensão medida, versão do pipeline, parâmetros de divisão e manifesto com hash/quantidade de trechos de cada documento. Dimensão, distância, versão, modelo ou documentos diferentes causam falha, sem apagar, recriar ou adaptar uma coleção existente. Escolha uma nova `QDRANT_COLLECTION` para uma base incompatível. Não altere o pipeline sem atualizar sua versão.
+
+O comando de ingestão consulta IDs antes de cada lote de até 16 trechos, confere o payload existente, calcula embeddings somente dos ausentes e faz `upsert` com confirmação de escrita. Os lotes podem atravessar a fronteira entre documentos. Quantidade, ordem, dimensão e validade numérica dos vetores são verificadas antes da gravação. Uma falha interrompe o comando; pontos já confirmados permanecem para retomada. Se o gateway concluir mas a escrita falhar, vetores que não tenham sido persistidos poderão precisar de nova geração em uma execução futura. Não há retentativa automática.
+
+O relatório mantém o resumo de extração dos quatro documentos e acrescenta contagens previstas, reutilizadas e gravadas, total de chamadas tentadas e falhas categorizadas. Não imprime textos, vetores, URL, perguntas ou erros brutos de serviços. Código 0 da execução exige contagens finais compatíveis com o manifesto dos quatro documentos; execução parcial retorna 1. Erros de configuração indicam nomes das variáveis inválidas, sem valores; falhas ao abrir o armazenamento retornam código público genérico por segurança.
+
+`app/rag.py:retrieve_chunks` valida a pergunta, confirma prontidão antes de consumir modelos, faz um único embedding `search_query` e consulta os quatro primeiros resultados, com documento e página. Não aplica limiar de confiança. Montagem do contexto, geração e rotas de chat pertencem à Etapa 4.
+
+`GET /ready` é público e retorna `{"status":"ready"}` com 200 somente quando a coleção é compatível e as contagens total e por documento correspondem ao manifesto. Ausência de configuração/coleção, base vazia/parcial/incompatível, lock local ou falha do Qdrant resultam em 503 com `detail.code="base_unavailable"`, mensagem pública e `request_id`. Não chama o gateway nem modifica a base. O código não trata indisponibilidade como falta de conteúdo.
+
+### Comandos reais preparados, ainda não executados
+
+Primeiro confirme o gateway pela verificação da Etapa 2, se ainda pendente:
+
+```bash
+python -m scripts.check_gateway --execute
+```
+
+Essa verificação tem teto de quatro chamadas: dois embeddings sintéticos (documento e pergunta) e uma geração em streaming por modelo, até 600 tokens de saída solicitados em cada geração. Depois preencha `EMBEDDING_DIMENSION` com o valor medido e igual nos dois tipos.
+
+Revise a extração e resolva ou aceite explicitamente as perdas descritas acima, incluindo a conferência visual pendente. Execute novamente o dry-run após qualquer mudança. As opções `--gateway-verified` e `--extraction-reviewed` atestam que essas verificações já foram realizadas; não as executam nem corrigem as limitações.
+
+```bash
+python -m scripts.ingest --dry-run
+```
+
+O dry-run de 28/10/2026 confirmou **4 documentos, 257 páginas e 285 trechos**, sem chamadas de modelos ou acesso ao Qdrant. Para esses arquivos/parâmetros, o teto é **18 chamadas** `POST embeddings`, modelo `cohere/embed-v4.0`, `input_type="search_document"`, até 16 entradas por chamada. O comando futuro autorizado é:
+
+```bash
+python -m scripts.ingest --execute \
+  --gateway-verified --extraction-reviewed --max-embedding-calls 18
+```
+
+O teto é conferido antes de abrir clientes. Se a preparação passar a exigir mais de 18 lotes, o comando aborta; revise o plano antes de elevar o valor. Em retomadas, o consumo pode ser menor; repetir uma ingestão já concluída gera **zero embeddings** quando todos os pontos e seus payloads permanecem intactos. No modo local, pare a API antes de indexar ou avaliar com o mesmo diretório; somente um processo deve abri-lo. Reinicie a API após a ingestão.
+
+As oito perguntas, duas por documento, estão em [evals/retrieval.json](evals/retrieval.json), com páginas físicas conferidas por leitura textual dos PDFs, elementos esperados e limitações. O arquivo contém perguntas/paráfrases, sem trechos extraídos. A avaliação mede se uma página esperada aparece entre os quatro primeiros resultados; não avalia respostas geradas. Primeiro veja o plano sem ler credenciais:
+
+```bash
+python -m scripts.check_retrieval
+```
+
+Depois da ingestão completa e de autorização para as chamadas, o comando preparado é:
+
+```bash
+python -m scripts.check_retrieval --execute --gateway-verified
+```
+
+Ele faz no máximo **8 chamadas** `POST embeddings`, modelo `cohere/embed-v4.0`, `input_type="search_query"`, uma pergunta por chamada; cada vetor alimenta uma busca top-4. Não há geração de resposta. O relatório contém IDs dos casos, documentos/páginas recuperados e posição da fonte esperada, sem perguntas ou trechos. Código 0 exige pelo menos **7/8** acertos; `below_target` ou falha retorna 1. A pontuação real segue pendente; a aprovação com dados sintéticos não é uma medição semântica desses oito casos.
+
+| Execução futura | Teto de chamadas ao gateway | Teto de operações Qdrant |
+| --- | ---: | ---: |
+| Compatibilidade pendente da Etapa 2 | 4: dois embeddings e duas gerações | 0 |
+| Ingestão inicial dos 285 trechos | 18 embeddings de documentos | 47 |
+| Avaliação das oito perguntas | 8 embeddings de perguntas | 71 |
+| `/ready`, por requisição | 0 | 7 |
+
+O teto da Etapa 3 é **26 chamadas de embeddings** por ingestão inicial mais uma avaliação; incluindo a compatibilidade pendente, são **30 chamadas ao gateway**, duas delas de geração. Os tetos valem para uma execução de cada comando, sem repetição automática. São **118 operações Qdrant** na ingestão+avaliação: validação/existência/criação de coleção, consulta de IDs, upserts, contagens e busca. No modo local essas operações são locais; no remoto são requisições REST. Uma checagem manual de `/ready` acrescenta até 7 operações Qdrant. Não há sondagem automática de versão do servidor ou redirecionamento HTTP. Falhas interrompem as verificações.
+
+### Ambiente para a Etapa 3
+
+Exporte as variáveis no terminal ou carregue manualmente seu `.env` privado como descrito na seção do gateway. Não envie valores de chaves ao chat.
+
+| Variável | Preenchimento |
+| --- | --- |
+| `LLM_BASE_URL` | URL base exata do gateway. Obrigatória para ingestão/avaliação reais, dispensada em `/ready`. |
+| `LLM_API_KEY` | Chave privada do gateway; mesma obrigatoriedade da URL. |
+| `EMBEDDING_MODEL` | Manter `cohere/embed-v4.0` (padrão). |
+| `EMBEDDING_DIMENSION` | Obrigatória para ingestão, recuperação e `/ready`; preencher **somente após medição real**. |
+| `QDRANT_COLLECTION` | Obrigatória; nome versionado, por exemplo `saude_mental_v1`. Não é criada no startup ou em `/ready`. |
+| `QDRANT_PATH` | Modo local: diretório privado; padrão `data/qdrant`, ignorado pelo Git. |
+| `QDRANT_URL` | Modo local: deixar vazia. Modo remoto: URL HTTPS completa do cluster, com a porta fornecida. Ao preencher, substitui o modo local. |
+| `QDRANT_API_KEY` | Obrigatória no modo remoto. Usar chave com escrita para ingestão e de consulta para a API, quando disponível. |
+| `REQUEST_TIMEOUT_SECONDS` | Opcional, padrão 90; prazo total por chamada de embeddings. Qdrant usa timeout de 15 segundos por operação remota. |
+
+Os padrões dos modelos de chat e `MAX_OUTPUT_TOKENS=600` bastam para a verificação prévia da Etapa 2. `API_ACCESS_TOKEN`, `MAX_CONCURRENT_REQUESTS` e `PORT` não são usados pelos comandos da Etapa 3. Sem dimensão/coleção válidas, a API mantém a saúde do processo e responde 503 em `/ready`.
+
 ## Testes e evidências
 
 ```bash
@@ -146,20 +226,24 @@ Na Etapa 1, foram obtidos **32 testes aprovados**, sem conexões externas ou cre
 
 Na Etapa 2, o resultado final em 28/10/2026 foi **97 testes aprovados** (32 existentes e 65 novos), sem chamadas reais. A suíte inclui HTTP simulado com `httpx.MockTransport`, passando pelo SDK instalado: corpo, rota e autenticação sintética; tipos de entrada; ordem, quantidade e dimensão de vetores; rejeição de vetores inválidos, booleanos e valores não finitos; escolha dos dois modelos; leitura incremental antes de consumir o restante do stream; encerramento normal, saída antecipada, erro, cancelamento e timeout; falhas HTTP, conexão e SSE; ausência de retentativas/redirecionamentos; teto de quatro chamadas e limite de saída; comando seguro por padrão e relatórios sem conteúdo. A validação foi feita antes das conversões permissivas do SDK para evitar aceitar um booleano como componente numérico. Essa suíte precisou executar fora do sandbox por causa dos sockets internos; a fixture continuou bloqueando conexões externas. O único aviso foi a depreciação do TestClient já registrada na Etapa 1.
 
+Na Etapa 3, em 28/10/2026, foram obtidos **138 testes aprovados** (97 anteriores e 41 novos), com o mesmo aviso. As novas verificações usam quatro PDFs sintéticos, gateway HTTP simulado e Qdrant temporário; incluem persistência após reabrir o diretório, payloads e páginas, IDs estáveis, limite de lote, retomada após falha, repetição sem novos embeddings, incompatibilidades sem perda de dados, cobertura por documento, avaliação/ranks simulados, nomes de variáveis inválidas sem valores e `/ready` com fechamento do cliente. O caminho remoto passou pelo SDK e por `httpx.MockTransport`, incluindo criação de coleção com metadados, consulta de IDs, upsert, contagem e busca; nenhum servidor remoto real foi acessado. O dry-run real reconfirmou 285 trechos e teto de 18 chamadas; `scripts.check_retrieval` foi executado apenas no modo de plano. Nenhuma nota de relevância real foi produzida.
+
 `pip check`: nenhuma incompatibilidade declarada. A combinação instalada emite um aviso de depreciação de `httpx` no TestClient do Starlette; os testes passam. Não foi adicionada a biblioteca alternativa `httpx2`, que não faz parte das dependências aprovadas.
 
-A suíte completa precisou executar fora do sandbox: a criação de sockets internos do TestClient fica bloqueada nele. Os 31 testes de processamento e CLI também passaram dentro do sandbox. Separadamente, Uvicorn foi iniciado em `127.0.0.1` e respondeu HTTP 200 em `/health`, `/docs` e `/openapi.json`; foi encerrado ao final. Essa verificação também precisou da permissão de socket local. Não houve chamadas reais de modelos, gravação no Qdrant ou publicação.
+A suíte completa precisou executar fora do sandbox: a criação de sockets internos de asyncio/TestClient fica bloqueada nele; o bloqueio de conexões externas dos testes permaneceu ativo. Na Etapa 1, os 31 testes de processamento e CLI também passaram dentro do sandbox. Separadamente naquela etapa, Uvicorn foi iniciado em `127.0.0.1` e respondeu HTTP 200 em `/health`, `/docs` e `/openapi.json`; foi encerrado ao final. Essa verificação também precisou da permissão de socket local. Na Etapa 3 houve somente gravação de dados sintéticos em Qdrant temporário. Nenhuma chamada real de modelo, indexação dos PDFs privados ou publicação foi executada.
 
 ## Responsabilidades e pendências
 
-`app/main.py` cria a API e a rota de saúde; `app/config.py` concentra constantes e valida a configuração do gateway com Pydantic; `app/ingestion.py` extrai, divide e resume; `scripts/ingest.py` valida argumentos e apresenta o relatório. `app/gateway.py` concentra o SDK e o contrato candidato; `scripts/check_gateway.py` coordena a verificação explícita. Os `TypedDict` descrevem registros e relatórios, sem classes de serviço.
+`app/main.py` cria a API, `/health`, `/ready` e o ciclo de vida do cliente vetorial. `app/config.py` valida as configurações; `app/ingestion.py` extrai, divide, cria IDs e coordena a indexação; `app/vector_store.py` concentra validação, persistência e busca; `app/rag.py` coordena prontidão, embedding da pergunta e recuperação. Os comandos de `scripts/` chamam essas funções e apresentam relatórios. `app/gateway.py` preserva a única integração de modelos e seu contrato candidato. `TypedDict` descreve registros/relatórios, sem classes de serviço.
 
-A extração e a rota de saúde continuam síncronas. O FastAPI executa a rota `def` em seu pool de threads. O PDF é aberto com `with` e fechado após a extração. A API não mantém clientes externos nem executa ingestão durante importação, inicialização, atendimento ou encerramento.
+A extração e a rota de saúde continuam síncronas. O FastAPI executa a rota `def` em seu pool de threads. O PDF é aberto com `with` e fechado após a extração. A API não executa ingestão durante importação, inicialização, atendimento ou encerramento.
 
-No gateway, `async def` define operações que podem suspender durante I/O; `await` aguarda o SDK sem bloquear o ciclo de eventos. `asyncio.run` cria e encerra esse ciclo no comando. `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega ao consumidor um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream`, com `asynccontextmanager`, usa `yield` para disponibilizar o iterador dentro de `async with`; a abertura é aguardada antes de disponibilizá-lo, e a saída fecha o stream inclusive em erro/cancelamento. O comando reutiliza um cliente nas quatro requisições e o fecha ao sair do contexto. `asyncio.timeout` limita a chamada inteira. O compartilhamento de clientes pelo ciclo de vida da API e as rotas RAG/SSE pertencem às etapas posteriores.
+`async def` define operações que podem suspender durante I/O; `await` aguarda os SDKs sem bloquear o ciclo de eventos nas chamadas de rede. O modo Qdrant local executa trabalho em memória/disco no próprio processo e não garante I/O não bloqueante. `asyncio.run` cria e encerra o ciclo nos comandos; clientes são reutilizados e fechados com `async with` ou `finally`. `asyncio.timeout` limita cada chamada de embeddings. O `lifespan` é um gerador assíncrono gerenciado por `asynccontextmanager`: antes de `yield`, abre um cliente Qdrant compartilhado quando a configuração/base local permite; depois de `yield`, fecha-o no encerramento. Nenhuma coleção é criada nesse ciclo. Para mudar a configuração ou abrir uma base local criada posteriormente, reinicie a API.
 
-Qdrant, `/ready`, `/models`, chat, autenticação da API e rotas SSE ainda não foram implementados. Nenhuma dimensão real de embedding foi medida. A qualidade da recuperação e das respostas ainda não foi avaliada. A inconsistência SSE registrada no checklist continua pendente para a Etapa 5 e não afeta o adaptador de streaming do provedor nesta etapa.
+No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream` usa `yield` para disponibilizar o iterador dentro de `async with` e fecha o stream ao sair. Esse adaptador já existia na Etapa 2; o cliente do gateway ainda não é aberto pela API e as rotas de resposta pertencem às próximas etapas.
 
-O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 2. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+`/models`, chat, autenticação da API e rotas SSE ainda não foram implementados. Nenhuma dimensão real de embedding foi medida. A qualidade real da recuperação e das respostas ainda não foi avaliada. A inconsistência SSE registrada no checklist continua pendente para a Etapa 5 e não afeta a Etapa 3.
 
-Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 2 sobre a Etapa 1 existente, sem executar modelos reais.
+O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 3. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+
+Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 3 sobre as etapas existentes, sem executar modelos reais.

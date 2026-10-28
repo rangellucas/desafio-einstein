@@ -48,8 +48,8 @@ def test_bad_pdf_does_not_hide_other_results(
     }]
 
 
-def test_normal_ingestion_is_unavailable(capsys: pytest.CaptureFixture[str]) -> None:
+def test_normal_ingestion_requires_explicit_mode(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as error:
         main([])
     assert error.value.code == 2
-    assert "somente --dry-run" in capsys.readouterr().err
+    assert "--execute" in capsys.readouterr().err

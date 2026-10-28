@@ -1,0 +1,65 @@
+{
+  "review": {
+    "date": "2026-10-28",
+    "method": "Leitura do texto extraído das páginas físicas dos PDFs locais, sem modelo. Perguntas e elementos esperados redigidos como paráfrases; nenhum trecho extraído incluído.",
+    "limitations": "Conferência visual pendente. Referências conferidas textualmente não certificam a qualidade da extração completa. Recuperação real ainda não executada."
+  },
+  "cases": [
+    {
+      "id": "R1",
+      "question": "Como a definição de saúde mental apresentada pela OPAS/OMS relaciona capacidades pessoais, trabalho e participação na comunidade?",
+      "expected_sources": [{"document": "sma-u-1-ampliando-o-conceito-de-saude-mental-3tFhLD7f_0007.pdf", "page": 12}],
+      "minimum_elements": ["Capacidades pessoais e enfrentamento das tensões cotidianas", "Atividade produtiva e contribuição comunitária"],
+      "expected_behavior": "Recuperar a definição presente na página física 12."
+    },
+    {
+      "id": "R2",
+      "question": "Qual mudança no lugar do manicômio no cuidado é associada à Lei da Reforma Psiquiátrica de 2001?",
+      "expected_sources": [{"document": "sma-u-1-ampliando-o-conceito-de-saude-mental-3tFhLD7f_0007.pdf", "page": 43}],
+      "minimum_elements": ["Direitos de quem utiliza os serviços", "Deslocamento do manicômio como eixo do tratamento"],
+      "expected_behavior": "Recuperar o marco histórico da reforma. Não é uma verificação da legislação vigente."
+    },
+    {
+      "id": "R3",
+      "question": "Quais dimensões do contexto de uma pessoa a integralidade considera e como isso se relaciona às ações de saúde?",
+      "expected_sources": [{"document": "sma-o-sujeito-a-integralidade-e-saude-mental.pdf", "page": 9}],
+      "minimum_elements": ["Contextos histórico, social, político, familiar e ambiental", "Integração entre promoção, prevenção e recuperação"],
+      "expected_behavior": "Recuperar a explicação da integralidade na APS."
+    },
+    {
+      "id": "R4",
+      "question": "Por que considerar conjuntamente raça, classe e gênero ao compreender a vulnerabilidade social no cuidado em saúde mental?",
+      "expected_sources": [{"document": "sma-o-sujeito-a-integralidade-e-saude-mental.pdf", "page": 15}],
+      "minimum_elements": ["Relações entre as opressões", "Evitar hierarquia única entre essas categorias"],
+      "expected_behavior": "Recuperar a discussão das intersecções sociais."
+    },
+    {
+      "id": "R5",
+      "question": "Quais razões são apresentadas para integrar o cuidado em saúde mental aos serviços de saúde não especializados?",
+      "expected_sources": [{"document": "sma-saude-mental-na-atencao-primaria-uTvcWzgG.pdf", "page": 12}],
+      "minimum_elements": ["Carga de transtornos e lacuna de atendimento", "Acesso, direitos humanos e resultados", "Relação entre saúde física e mental e custo-benefício"],
+      "expected_behavior": "Recuperar a lista de razões para integração."
+    },
+    {
+      "id": "R6",
+      "question": "O que a psicoeducação na APS deve comunicar sobre autonomia, prognóstico, enfrentamento e bem-estar?",
+      "expected_sources": [{"document": "sma-saude-mental-na-atencao-primaria-uTvcWzgG.pdf", "page": 15}],
+      "minimum_elements": ["Participação e autonomia da pessoa", "Informação realista sobre o prognóstico", "Recursos pessoais e comunitários e cuidados gerais"],
+      "expected_behavior": "Recuperar os eixos de comunicação da psicoeducação, sem conduta individual."
+    },
+    {
+      "id": "R7",
+      "question": "Quem pode oferecer Primeiros Cuidados Psicológicos e a quem e em qual período após uma crise eles se destinam?",
+      "expected_sources": [{"document": "sma-desenvolvendo-os-cuidados-de-saude-mental-na-aps-kJpr4dDC 2.pdf", "page": 26}],
+      "minimum_elements": ["Pessoa treinada, sem exclusividade dos profissionais de saúde", "Pessoas abaladas por uma crise recente", "Possibilidade de apoio nas semanas seguintes e respeito à recusa"],
+      "expected_behavior": "Recuperar destinatários, período e requisito de treinamento."
+    },
+    {
+      "id": "R8",
+      "question": "Como a entrevista motivacional é definida e que papel a ambivalência tem nessa abordagem?",
+      "expected_sources": [{"document": "sma-desenvolvendo-os-cuidados-de-saude-mental-na-aps-kJpr4dDC 2.pdf", "page": 59}],
+      "minimum_elements": ["Conversa colaborativa para motivação e compromisso com mudança", "Resolução da ambivalência em uma intervenção breve"],
+      "expected_behavior": "Recuperar a definição e o objetivo da abordagem."
+    }
+  ]
+}

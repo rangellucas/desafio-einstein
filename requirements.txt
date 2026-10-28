@@ -4,3 +4,4 @@ pydantic==2.14.1
 pypdf==6.21.3
 openai==2.29.0
 httpx==0.28.1
+qdrant-client==1.19.1
