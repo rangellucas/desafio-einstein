@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from time import perf_counter
 from typing import Literal
 
@@ -10,7 +12,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from qdrant_client import AsyncQdrantClient
 
 from app.config import GatewaySettings, VectorSettings
-from app.gateway import GatewayContractError, embed_texts, open_chat_stream
+from app.gateway import ChatPart, GatewayContractError, embed_texts, open_chat_stream
 from app.prompts import build_context, build_messages
 from app.schemas import Source
 from app.vector_store import BaseUnavailable, SearchHit, check_ready, search_chunks
@@ -62,23 +64,44 @@ async def prepare_answer(
     return build_messages(question, context), sources
 
 
-async def generate_answer(
+@asynccontextmanager
+async def open_answer(
     gateway: AsyncOpenAI, settings: GatewaySettings, model: str,
     messages: list[ChatCompletionMessageParam], *, request_id: str,
-) -> tuple[str, Literal["stop", "length"]]:
-    """Acumula fragmentos para JSON; fecha o stream mesmo em erro ou timeout."""
+) -> AsyncIterator[AsyncIterator[ChatPart]]:
+    """Uma abertura e uma validação de geração para JSON e SSE, sem acumular texto."""
     started = perf_counter()
-    fragments: list[str] = []
-    finish_reason = None
-    async with asyncio.timeout(settings.request_timeout_seconds):
+    try:
         async with open_chat_stream(gateway, settings, model, messages) as parts:
-            async for part in parts:
-                fragments.append(part["text"])
-                if part["finish_reason"] is not None:
-                    finish_reason = part["finish_reason"]
-    answer = "".join(fragments)
-    # Filtro de conteúdo e chamadas de ferramentas não representam uma resposta completa.
-    if finish_reason not in {"stop", "length"} or not answer.strip():
+            validated = valid_answer_parts(parts)
+            try:
+                yield validated
+            finally:
+                await validated.aclose()
+    finally:
+        logger.info("rag_step request_id=%s stage=generation duration_ms=%.1f", request_id, (perf_counter() - started) * 1000)
+
+
+async def valid_answer_parts(parts: AsyncIterator[ChatPart]) -> AsyncGenerator[ChatPart, None]:
+    has_text = False
+    reason = None
+    async for part in parts:
+        has_text = has_text or bool(part["text"].strip())
+        if part["finish_reason"] is not None:
+            reason = part["finish_reason"]
+            if reason not in {"stop", "length"}:
+                raise GatewayContractError("chat_completion_invalid")
+        yield part
+    if not has_text or reason not in {"stop", "length"}:
         raise GatewayContractError("chat_completion_invalid")
-    logger.info("rag_step request_id=%s stage=generation duration_ms=%.1f", request_id, (perf_counter() - started) * 1000)
-    return answer, "length" if finish_reason == "length" else "stop"
+
+
+async def collect_answer(parts: AsyncIterator[ChatPart]) -> tuple[str, Literal["stop", "length"]]:
+    """Somente a rota JSON acumula os fragmentos já validados do fluxo comum."""
+    fragments: list[str] = []
+    reason: Literal["stop", "length"] = "stop"
+    async for part in parts:
+        fragments.append(part["text"])
+        if part["finish_reason"] == "length":
+            reason = "length"
+    return "".join(fragments), reason

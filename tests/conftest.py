@@ -6,6 +6,10 @@ import pytest
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+_socket_connect = socket.socket.connect
+_socket_connect_ex = socket.socket.connect_ex
+_create_connection = socket.create_connection
+
 
 @pytest.fixture(autouse=True)
 def isolate_api_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -30,6 +34,24 @@ def block_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket.socket, "connect", deny)
     monkeypatch.setattr(socket.socket, "connect_ex", deny)
     monkeypatch.setattr(socket, "create_connection", deny)
+
+
+@pytest.fixture
+def loopback_network(block_network, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exceção explícita para Uvicorn real: somente IPv4 loopback, nunca internet."""
+    def connect(sock, address):
+        if not isinstance(address, tuple) or address[0] != "127.0.0.1":
+            raise AssertionError("Somente loopback IPv4 permitido neste teste.")
+        return _socket_connect(sock, address)
+
+    def connect_ex(sock, address):
+        if not isinstance(address, tuple) or address[0] != "127.0.0.1":
+            raise AssertionError("Somente loopback IPv4 permitido neste teste.")
+        return _socket_connect_ex(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    monkeypatch.setattr(socket, "create_connection", _create_connection)
 
 
 @pytest.fixture

@@ -31,6 +31,8 @@ class ModelSettings(BaseModel):
 
 class ApiSettings(ModelSettings):
     access_token: SecretStr | None = Field(default=None, repr=False)
+    request_timeout_seconds: float = Field(default=90, gt=0, allow_inf_nan=False)
+    max_concurrent_requests: int = Field(default=2, gt=0)
 
 
 class GatewaySettings(ModelSettings):
@@ -82,6 +84,8 @@ def load_api_settings(environ: Mapping[str, str] | None = None) -> ApiSettings:
         raise ValueError("API_ACCESS_TOKEN não pode conter apenas espaços.")
     return ApiSettings.model_validate({
         **model_configuration(env), "access_token": SecretStr(token) if token else None,
+        "request_timeout_seconds": env.get("REQUEST_TIMEOUT_SECONDS", "90"),
+        "max_concurrent_requests": env.get("MAX_CONCURRENT_REQUESTS", "2"),
     })
 
 

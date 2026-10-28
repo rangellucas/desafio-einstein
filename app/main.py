@@ -1,7 +1,8 @@
-"""API JSON; clientes compartilhados e fechados no ciclo de vida, sem ingestão."""
+"""API JSON/SSE; clientes e capacidade compartilhados, sem ingestão."""
 
 from contextlib import AsyncExitStack, asynccontextmanager
 from collections.abc import AsyncIterator
+import asyncio
 import logging
 from uuid import uuid4
 
@@ -20,7 +21,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     try:
         application.state.api_settings = load_api_settings()
     except (ValidationError, ValueError):
-        raise ValueError("Configuração inválida: confira CHAT_MODELS, DEFAULT_CHAT_MODEL e API_ACCESS_TOKEN.") from None
+        raise ValueError("Configuração inválida: confira modelos, API_ACCESS_TOKEN, REQUEST_TIMEOUT_SECONDS e MAX_CONCURRENT_REQUESTS.") from None
+    application.state.query_slots = asyncio.BoundedSemaphore(application.state.api_settings.max_concurrent_requests)
     application.state.vector_client = None
     application.state.vector_settings = None
     application.state.gateway_client = None
@@ -47,8 +49,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Consulta educacional sobre Saúde Mental",
-    description="Consulta educacional independente com resposta JSON e fontes por página física. Não realiza diagnóstico ou prescrição.",
-    version="0.4.0", lifespan=lifespan,
+    description="Consulta educacional independente com respostas JSON/SSE e fontes por página física. Não realiza diagnóstico ou prescrição.",
+    version="0.5.0", lifespan=lifespan,
 )
 app.include_router(router)
 

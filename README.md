@@ -1,6 +1,6 @@
 # Consulta educacional sobre Saúde Mental
 
-Implementação das **Etapas 1–4** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consulta JSON autenticada em `/chat`. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
+Implementação das **Etapas 1–5** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consultas autenticadas em `/chat` (JSON) e `/chat/stream` (SSE), com prazo total e capacidade compartilhada. A integração foi testada com respostas simuladas e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
 
 ## Instalação e execução
 
@@ -226,18 +226,18 @@ O ciclo de vida abre e compartilha os clientes do gateway e do Qdrant, sem chama
 
 O fluxo de uma pergunta passa por estas funções:
 
-1. `routes.authenticate` verifica o Bearer e cria `request_id`; `ChatRequest` valida e normaliza o corpo. `routes.chat` resolve e valida o modelo.
+1. `routes.authenticate` verifica o Bearer e cria `request_id`; `ChatRequest` valida e normaliza o corpo. `routes.run_chat`, compartilhada pelas duas rotas, resolve e valida o modelo e adquire uma vaga de execução.
 2. `rag.prepare_answer` chama `retrieve_chunks`: confere dimensão/prontidão, gera um embedding `search_query` e busca top-4 no Qdrant. Falha da base retorna erro, sem ser convertida em contexto vazio.
 3. `prompts.build_context` remove textos exatamente duplicados e limita o contexto a 8.000 caracteres, contando cabeçalhos e separadores. Cada bloco recebe `[S1]`, documento e página física. As fontes correspondem somente aos blocos efetivamente incluídos; cada `excerpt` contém até 600 caracteres, enquanto o texto enviado ao modelo pode ser maior.
 4. `prompts.build_messages` cria instruções fixas de sistema e uma mensagem de dados com pergunta/contexto. Não há histórico. O prompt exige português, fundamentação, referências fornecidas e reconhecimento de insuficiência; impede diagnóstico/prescrição individual e orienta ajuda humana/emergência local em relato de risco imediato. Perguntas e documentos não podem substituir as regras da aplicação.
-5. Com fontes, `rag.generate_answer` usa `gateway.open_chat_stream`, o mesmo adaptador para ambos os modelos. Acumula os fragmentos para uma resposta JSON completa e fecha o stream. Sem fontes, retorna explicação local com `sources: []` e `finish_reason: "insufficient_context"`, sem geração.
+5. Com fontes, `rag.open_answer` usa `gateway.open_chat_stream`, o mesmo adaptador para ambos os modelos, e `valid_answer_parts` valida conteúdo/término sem acumular texto. `rag.collect_answer` acumula os fragmentos exclusivamente para a resposta JSON completa. Sem fontes, retorna explicação local com `sources: []` e `finish_reason: "insufficient_context"`, sem geração.
 6. `routes.chat` retorna `request_id`, `model`, `answer`, `sources` e `finish_reason`. `stop` indica término normal e `length` indica corte pelo limite de saída. Motivos de ferramenta/filtro, ausência de término, resposta vazia ou malformada não são apresentados como sucesso.
 
 As fontes são os trechos disponibilizados ao modelo; sua presença não prova a fundamentação de cada frase. As regras do prompt também não garantem ausência de alucinação: a avaliação real continua pendente.
 
 Erros controlados retornam `detail` com `code`, `message` pública e `request_id`. A validação de corpo usa o formato padrão do FastAPI. Base ausente/incompatível ou Qdrant indisponível retorna 503; falha/resposta inválida do gateway retorna 502; conexão indisponível, HTTP 429 ou 5xx do provedor retorna 503; timeout de chamada do gateway retorna 504. Mensagens brutas do provedor não são devolvidas. Não há retentativa automática nem fallback para outro modelo.
 
-Nesta etapa, `REQUEST_TIMEOUT_SECONDS` limita separadamente o embedding e a geração (incluindo leitura e fechamento do stream). Qdrant remoto mantém timeout de 15 segundos por operação. O prazo total de consulta, o limite de concorrência/429 da aplicação, o tratamento de desconexão do consumidor e `/chat/stream` pertencem à Etapa 5. `MAX_CONCURRENT_REQUESTS` ainda não é aplicado. O JSON usa streaming somente entre backend e gateway; isso não constitui uma rota SSE pública.
+Desde a Etapa 5, `REQUEST_TIMEOUT_SECONDS` limita a consulta inteira, da admissão até a conclusão, incluindo prontidão, embedding, busca, abertura e leitura da geração. `MAX_CONCURRENT_REQUESTS` limita ambas as rotas em conjunto, antes de qualquer chamada externa. Qdrant remoto e SDK mantêm seus timeouts de operação, subordinados ao prazo total. Os detalhes do SSE e do cancelamento estão abaixo.
 
 Os logs de `app.rag`/`app.routes` em nível INFO contêm somente metadados: identificador, etapa/tempos, rota, modelo, quantidade de fontes e resultado/motivo de término ou erro categorizado. Não incluem perguntas, respostas, contexto, credenciais ou mensagens brutas de dependências. Não registram uso de tokens ausente. O nível/handler de logging fica a cargo do executor; a aplicação não ativa logs detalhados de SDKs.
 
@@ -274,6 +274,79 @@ curl --fail-with-body "$API_URL/chat" \
 
 Altere o modelo para `azure/gpt-6-luna` na segunda consulta e remova a propriedade na terceira. Sem base pronta, espere 503; isso não equivale ao sucesso com `insufficient_context`. Não simule contexto vazio apagando a coleção. A ausência de resultados é exercitada com substituto nos testes. Entradas inválidas, por exemplo `{"question":"   "}` ou modelo `"inexistente"`, e acesso sem Bearer quando configurado devem falhar sem serviços externos.
 
+## Streaming e controle de execução — Etapa 5
+
+`POST /chat/stream` recebe exatamente o corpo e a autenticação de `/chat`. Validação, seleção do modelo, admissão, recuperação, fontes, mensagens e abertura/validação da geração percorrem `routes.run_chat` e as mesmas funções do RAG. A rota JSON preserva seu contrato; a SSE repassa os fragmentos sem montar a resposta inteira. Não há retentativas nem reinício da geração após envio parcial.
+
+A resposta de sucesso usa `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache` e `X-Accel-Buffering: no`. Cada evento tem `event: <nome>`, `data: <JSON serializado>` e uma linha vazia final. Aspas, Unicode e quebras de linha são preservados pelo JSON, sem criar novos campos SSE.
+
+| Evento | Payload e ordem |
+| --- | --- |
+| `sources` | Primeiro: `{request_id, model, sources}`. Cada fonte tem `{id, document, page, excerpt}`, igual ao JSON para entradas/dependências equivalentes. |
+| `delta` | `{text}` para cada fragmento não vazio do gateway, conforme recebido. Um fragmento pode conter espaços ou vários tokens. |
+| `done` | `{finish_reason}`: `stop`, `length` (saída cortada) ou `insufficient_context`. Único terminal em sucesso. |
+| `error` | `{code, message, request_id}` com mensagem pública, sem corpo interno do provedor. Único terminal em falha; nunca seguido de `done`. |
+
+Sem contexto utilizável, envia `sources` vazio, um `delta` com explicação **local** e `done` com `insufficient_context`, sem geração. Essa exceção à origem dos deltas no gateway foi explicitada na solicitação desta etapa e registrada no checklist. Uma base indisponível continua sendo erro 503, sem fingir ausência de conteúdo.
+
+A recuperação e a tentativa de abertura do stream do gateway ocorrem **antes** de devolver `StreamingResponse`. Até esse ponto, aplicam-se os erros HTTP documentados: 401/422, 429 da aplicação, 502/503 de dependência e 504 de timeout. O SDK só descobre algumas falhas na leitura: depois dos cabeçalhos, o HTTP permanece 200 e o corpo termina em `error`. O cliente precisa verificar o evento terminal, além do status. Uma desconexão não permite entregar evento terminal.
+
+`REQUEST_TIMEOUT_SECONDS=90` é o prazo total inicial, contado após validação/admissão. Um único instante limite acompanha prontidão, embedding, busca, abertura e consumo/envio SSE, inclusive espera na escrita para um consumidor lento. Não há um novo prazo completo ao passar de recuperação para geração ou de rota para resposta. Ao expirar, o trabalho é cancelado e o stream é fechado; encerramentos assíncronos são aguardados para liberar recursos. Cancelamento é cooperativo: trabalho síncrono do Qdrant local não pode ser interrompido no meio de uma operação que bloqueia o ciclo de eventos.
+
+`MAX_CONCURRENT_REQUESTS=2` limita **a soma** de consultas JSON e SSE em execução. Se não houver vaga, retorna 429 imediatamente, antes de prontidão/Qdrant/embedding/geração. Não cria fila. O semáforo é criado no `lifespan`, por processo; use um worker. Ele não impõe uma cota financeira global. Configurações de prazo não positivo/não finito ou capacidade não inteira/positiva impedem a inicialização sem mostrar os valores.
+
+O ciclo de recursos é explícito:
+
+1. `run_chat` valida, adquire uma vaga e registra sua liberação no `AsyncExitStack` da consulta. `prepare_answer` recupera o contexto; `open_answer` abre o provedor antes dos cabeçalhos e registra seu fechamento em uma pilha da geração, incluída na pilha da consulta.
+2. `run_connected` acompanha o trabalho e um leitor de `http.disconnect`. Ao desconectar, cancela e aguarda o trabalho. O leitor também é cancelado/aguardado quando a fase termina; apenas um leitor fica ativo por fase, inclusive no JSON e antes dos cabeçalhos.
+3. `collect_answer` consome o iterador para JSON; `answer_events` entrega `sources`, cada `delta` e o terminal SSE. `QueryStreamingResponse` estende `StreamingResponse` para guardar os recursos abertos e garantir limpeza mesmo se o gerador não começar, se a escrita falhar ou se o consumidor sair enquanto o provedor aguarda. Também trata desconexão com ASGI 2.4, sem depender apenas de erro na próxima escrita.
+4. A pilha fecha o stream e libera a vaga em sucesso, erro, timeout ou cancelamento. Em sucesso, o provedor é fechado antes de `done` e a vaga permanece ocupada até o encerramento do envio; uma falha de fechamento vira erro público. Em falha/desconexão, um erro adicional de limpeza é registrado apenas por categoria fixa e a vaga ainda é liberada. Os clientes compartilhados do gateway/Qdrant continuam abertos para as próximas consultas e são fechados no encerramento da aplicação.
+
+`async def` define corrotinas e geradores capazes de suspender sem bloquear a espera de rede. `await` espera prontidão, SDK, busca, próxima leitura, envio e fechamento. Em `valid_answer_parts`/`answer_events`, cada `yield` cede somente o próximo fragmento/evento a quem executa `async for`: a geração continua enquanto o cliente já pode ler texto. Já o `yield` de `open_answer` entrega o iterador ao `AsyncExitStack`, que retomará a saída para fechá-lo. `run_connected` cria tarefas para observar desconexão e trabalho simultaneamente; sempre as aguarda, sem deixar geração em segundo plano após a consulta. O [timeout absoluto do asyncio](https://docs.python.org/3.12/library/asyncio-task.html#asyncio.timeout_at) usa o relógio monotônico do mesmo ciclo de eventos.
+
+### Verificar localmente sem consumir modelos
+
+```bash
+source .venv/bin/activate
+python -m pytest -q tests/test_stream.py tests/test_check_stream.py
+python -m pytest -q -s tests/test_stream_http.py
+python -m scripts.check_stream
+```
+
+Os testes HTTP abrem Uvicorn temporariamente em `127.0.0.1`, porta livre, usando a aplicação real com configuração, gateway e Qdrant sintéticos. Só liberam conexões de loopback; acesso externo continua bloqueado. Um provedor controlado entrega o primeiro fragmento e aguarda um sinal do teste. O cliente recebe `sources` e `delta`, confere que a geração continua em andamento, espera um intervalo controlado e só então libera o restante. O teste imprime os tempos observados e fecha servidor/conexões. Isso comprova entrega progressiva pela rede; os testes de contrato em memória, que podem acumular o corpo, não são essa prova.
+
+O último comando acima mostra somente o plano, sem ler token ou fazer HTTP. Com `--execute`, o cliente faz um único POST, sem redirecionamentos/repetição, registra o instante UTC e o tempo decorrido de cada evento, valida JSON/ordem/término e informa se recebeu `delta` antes de `done`. Não imprime pergunta, resposta, fontes ou token. Uma falha HTTP/SSE produz saída não zero. Tempos próximos entre eventos em um serviço real, por si só, não comprovam ausência de buffering; a prova controlada usa também o estado do provedor.
+
+### Consumo manual preparado (não executado com modelos reais)
+
+Com a API e uma base já verificadas, e **após autorização do consumo**, uma execução de cada cliente abaixo pode fazer até **2 chamadas de modelos**: 1 embedding de pergunta e 1 geração de até `MAX_OUTPUT_TOKENS`. Executar ambos equivale a até 4 chamadas. Não são parte dos testes comuns. O startup da API não consome modelos.
+
+```bash
+# Terminal da API: variáveis privadas já exportadas; não imprima os valores.
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+Em outro terminal, escolha **um** consumidor para uma consulta:
+
+```bash
+API_URL=http://127.0.0.1:8000
+curl -N --fail-with-body "$API_URL/chat/stream" \
+  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  --data '{"question":"Como a atenção primária participa do cuidado em saúde mental?","model":"azure/gpt-5-mini"}'
+```
+
+Ou use o cliente de verificação, que lê `API_ACCESS_TOKEN` somente no modo de execução:
+
+```bash
+python -m scripts.check_stream --execute --url "$API_URL" --model azure/gpt-5-mini
+```
+
+`--question` permite mudar a pergunta e omitir `--model` usa o padrão da API. Sem token configurado no desenvolvimento, omita o header Authorization no curl. Como a rota é POST, não use diretamente `EventSource` do navegador. Use `/chat` no Swagger para explorar JSON/fontes: **Swagger não será usado como prova de entrega incremental**, embora `/chat/stream` esteja documentada no OpenAPI com eventos, exemplos e erros.
+
+Permanecem pendentes o contrato efetivo/streaming dos dois modelos no gateway, ingestão/recuperação/respostas reais e buffering no proxy publicado. Nenhuma dessas verificações é inferida dos substitutos; publicação e Etapas 6–7 não foram executadas.
+
 ## Testes e evidências
 
 ```bash
@@ -290,7 +363,9 @@ Na Etapa 3, em 28/10/2026, foram obtidos **138 testes aprovados** (97 anteriores
 
 Na Etapa 4, em 28/10/2026, foram obtidos **209 testes aprovados** (138 anteriores e 71 novos), com o mesmo aviso. Os testes de API substituem configuração real e Qdrant e usam o SDK do gateway com HTTP simulado, mantendo o bloqueio de conexões externas. Verificam modelos/padrões, rejeição sem serviços externos, autenticação e segurança OpenAPI, contexto/deduplicação/fontes, limites de entrada/excertos/contexto, perguntas independentes, ausência de geração sem fontes, falhas de base/gateway, JSON/delta/término inválidos, timeout separado por chamada, fechamento e descarte de resposta parcial. Logs da aplicação foram conferidos sem conteúdo privado. Não foram executados modelos reais, ingestão ou publicação. HTML e esquema do Swagger foram verificados em memória; renderização/Authorize no navegador e respostas/fontes reais permanecem pendentes. Esses testes verificam o contrato e a separação das instruções, sem provar a qualidade semântica dos modelos.
 
-Para repetir apenas as verificações novas, sem consumo de modelos:
+Na Etapa 5, em 28/10/2026, o resultado foi **297 testes aprovados** (209 anteriores e 88 novos), com o aviso conhecido do TestClient. Os contratos SSE, autenticação/modelos, fontes equivalentes, contexto vazio, caracteres especiais, término por limite, falhas na abertura/leitura/fechamento, timeout total, cancelamento e capacidade compartilhada foram verificados com substitutos. Os **14 testes HTTP reais** sobem Uvicorn em loopback e provam entrega de um delta com a geração ainda bloqueada no provedor controlado; também verificam desconexão/timeout, rejeição sem chamadas externas e reutilização da vaga. Uma execução registrada mediu primeiro delta em **0,056 s** e `done` em **0,138 s**, com intervalo controlado de 80 ms após receber o delta, sem apresentar esses tempos como benchmark. Os demais testes continuam com conexões externas bloqueadas; os HTTP liberam somente `127.0.0.1`. O cliente de verificação passou por HTTP real com o substituto e seu CLI foi executado apenas no modo de plano. Nenhuma dependência adicionada, modelo real, ingestão ou publicação. Detalhes no [checklist](CHECKLIST.md).
+
+Para repetir as verificações JSON/contexto, sem consumo de modelos:
 
 ```bash
 python -m pytest -q tests/test_chat.py tests/test_prompts.py
@@ -302,18 +377,18 @@ A suíte completa precisou executar fora do sandbox: a criação de sockets inte
 
 ## Responsabilidades e pendências
 
-`app/main.py` cria a API, `/health`, `/ready` e o ciclo de vida de ambos os clientes. `app/config.py` valida as configurações; `app/ingestion.py` extrai, divide, cria IDs e coordena a indexação; `app/vector_store.py` concentra validação, persistência e busca; `app/rag.py` prepara a consulta e acumula a geração JSON. `app/routes.py` trata autenticação e erros HTTP; `app/schemas.py` define contratos Pydantic; `app/prompts.py` limita/formata o contexto e prepara as instruções. Os comandos de `scripts/` chamam essas funções e apresentam relatórios. `app/gateway.py` preserva a única integração de modelos e seu contrato candidato. `TypedDict` descreve registros/relatórios, sem classes de serviço.
+`app/main.py` cria a API, `/health`, `/ready` e o ciclo de vida de ambos os clientes. `app/config.py` valida as configurações; `app/ingestion.py` extrai, divide, cria IDs e coordena a indexação; `app/vector_store.py` concentra validação, persistência e busca; `app/rag.py` prepara a consulta e valida a geração comum; acumula texto apenas para JSON. `app/routes.py` trata autenticação, admissão, fluxo comum e eventos/erros HTTP/SSE; `app/execution.py` controla desconexão e a propriedade dos recursos durante a resposta; `app/schemas.py` define contratos Pydantic; `app/prompts.py` limita/formata o contexto e prepara as instruções. Os comandos de `scripts/` chamam essas funções e apresentam relatórios. `app/gateway.py` preserva a única integração de modelos e seu contrato candidato. `TypedDict` descreve registros/relatórios, sem classes de serviço.
 
 A extração e a rota de saúde continuam síncronas. O FastAPI executa a rota `def` em seu pool de threads. O PDF é aberto com `with` e fechado após a extração. A API não executa ingestão durante importação, inicialização, atendimento ou encerramento.
 
-`async def` define operações que podem suspender durante I/O; `await` aguarda os SDKs sem bloquear o ciclo de eventos nas chamadas de rede. O modo Qdrant local executa trabalho em memória/disco no próprio processo e não garante I/O não bloqueante. `asyncio.run` cria e encerra o ciclo nos comandos. `asyncio.timeout` limita separadamente embedding e geração JSON. O `lifespan` é um gerador assíncrono gerenciado por `asynccontextmanager`: antes de `yield`, abre os clientes compartilhados quando a configuração permite; `yield` cede o atendimento ao FastAPI; na saída, `AsyncExitStack` encerra os recursos na ordem inversa, mesmo se algum fechamento falhar. Nenhuma coleção é criada nesse ciclo. Para mudar a configuração ou abrir uma base local criada posteriormente, reinicie a API.
+`async def` define operações que podem suspender durante I/O; `await` aguarda os SDKs sem bloquear o ciclo de eventos nas chamadas de rede. O modo Qdrant local executa trabalho em memória/disco no próprio processo e não garante I/O não bloqueante. `asyncio.run` cria e encerra o ciclo nos comandos. `asyncio.timeout_at` aplica o mesmo prazo absoluto na preparação/JSON e no envio SSE; o timeout de operação do embedding permanece subordinado a ele. O `lifespan` é um gerador assíncrono gerenciado por `asynccontextmanager`: antes de `yield`, abre os clientes compartilhados quando a configuração permite; `yield` cede o atendimento ao FastAPI; na saída, `AsyncExitStack` encerra os recursos na ordem inversa, mesmo se algum fechamento falhar. Nenhuma coleção é criada nesse ciclo. Para mudar a configuração ou abrir uma base local criada posteriormente, reinicie a API.
 
-No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream` usa `yield` para disponibilizar o iterador dentro de `async with` e fecha o stream ao sair. `generate_answer` acumula esses fragmentos com lista e `"".join`, sem criar uma segunda integração. Preparação de contexto/mensagens e adaptador permanecem disponíveis para a futura rota SSE.
+No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yield` entrega um fragmento ou motivo de término, e `async for` solicita o próximo. `open_chat_stream` usa `yield` para disponibilizar o iterador dentro de `async with` e fecha o stream ao sair. `open_answer` acrescenta validação comum sem acumulação, `collect_answer` junta os fragmentos exclusivamente para JSON e `answer_events` entrega cada fragmento SSE com `yield`, sem criar uma segunda integração.
 
 Pydantic valida entradas/saídas e proíbe campos extras no pedido; `strict=True` evita converter números em perguntas/modelos. `SecretStr` oculta tokens nas representações; a comparação Bearer usa `hmac.compare_digest` com bytes UTF-8. `set` remove duplicatas de texto preservando a primeira ocorrência pela lista de blocos. `Literal` restringe motivos públicos de término. Não foram criadas classes de serviço ou adicionadas dependências.
 
-As rotas SSE e os controles da Etapa 5 ainda não foram implementados. Nenhuma dimensão real de embedding foi medida. A qualidade real da recuperação e das respostas ainda não foi avaliada. A inconsistência SSE registrada no checklist continua pendente para a Etapa 5 e não afeta o contrato JSON.
+SSE e controles da Etapa 5 foram implementados e verificados com substitutos e HTTP local. Nenhuma dimensão real de embedding foi medida e a qualidade real da recuperação/respostas continua pendente. O escopo explícito solicitado para a Etapa 5 esclareceu a inconsistência: o delta local de insuficiência de contexto é a exceção à origem no gateway, registrada no checklist.
 
-O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 4. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
+O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante esta Etapa 5. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1. A auditoria completa de segredos e artefatos privados no conteúdo versionado/histórico permanece pendente para a etapa correspondente; não foi realizada aqui.
 
-Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 4 sobre as etapas existentes, sem executar modelos reais.
+Código, testes e documentação foram preparados com auxílio do Codex e validados conforme as evidências descritas. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados; esta entrega implementa somente a Etapa 5 sobre as etapas existentes, sem executar modelos reais.

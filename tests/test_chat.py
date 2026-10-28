@@ -36,11 +36,11 @@ def event(text=None, reason=None) -> bytes:
 
 
 @pytest.fixture
-def api(monkeypatch, tmp_path):
+def gateway_case(monkeypatch, tmp_path):
     case = SimpleNamespace(
         calls=[], responses=[], clients=[], error=None, fail_phase="embedding", delay=None,
         reason="stop", malformed=False, answer="Resposta sintética. [S1]",
-        invalid_json=None, invalid_delta=False, stream_failure=None,
+        invalid_json=None, invalid_delta=False, stream_failure=None, stream_factory=None,
     )
     case.gateway_settings = GatewaySettings(
         base_url="https://gateway.test/v1", api_key="synthetic-gateway-only", embedding_dimension=2,
@@ -73,7 +73,8 @@ def api(monkeypatch, tmp_path):
             if case.invalid_delta:
                 content = b'data: {"choices":[{"index":0,"delta":null}]}\n\n'
             response = httpx.Response(200, headers={"content-type": "text/event-stream"},
-                                      stream=FailingStream() if case.stream_failure else httpx.ByteStream(content))
+                                      stream=case.stream_factory() if case.stream_factory else
+                                      FailingStream() if case.stream_failure else httpx.ByteStream(content))
         case.responses.append(response)
         return response
 
@@ -88,6 +89,7 @@ def api(monkeypatch, tmp_path):
             case.stream_closed = True
 
     def gateway_factory(settings):
+        case.loop = asyncio.get_running_loop()
         gateway = create_gateway_client(settings, transport=httpx.MockTransport(handle))
         case.clients.append(gateway)
         return gateway
@@ -99,13 +101,19 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "create_gateway_client", gateway_factory)
     monkeypatch.setattr("app.rag.check_ready", case.ready)
     monkeypatch.setattr("app.rag.search_chunks", case.search)
+    yield case
+    case.store.close.assert_awaited_once()
+    assert len(case.clients) == 1 and case.clients[0].is_closed()
+    assert all(response.is_closed for response in case.responses)
+
+
+@pytest.fixture
+def api(gateway_case):
+    case = gateway_case
     with TestClient(main.app) as client:
         case.client = client
         case.headers = {"Authorization": "Bearer synthetic-access-only"}
         yield case
-    case.store.close.assert_awaited_once()
-    assert len(case.clients) == 1 and case.clients[0].is_closed()
-    assert all(response.is_closed for response in case.responses)
 
 
 def post(api, body=None, **kwargs):
@@ -129,7 +137,7 @@ def test_models_public_configuration_and_swagger(api):
     assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
     assert schema["paths"]["/chat"]["post"]["security"] == [{"HTTPBearer": []}]
     assert "security" not in schema["paths"]["/models"]["get"]
-    assert "/chat/stream" not in schema["paths"]
+    assert "/chat/stream" in schema["paths"]
     assert {"200", "401", "422", "502", "503", "504"} <= schema["paths"]["/chat"]["post"]["responses"].keys()
     assert_no_services(api)
 

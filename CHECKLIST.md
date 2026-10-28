@@ -2,7 +2,7 @@
 
 Fonte: [PRD.md](PRD.md), seções 14–16. Os IDs AC remetem aos critérios gerais de aceite da seção 14; sua associação a uma etapa não significa que já foram atendidos. Cada etapa exige solicitação própria.
 
-Estado atual: **Etapa 4 implementada e testada com substitutos; gateway, ingestão, recuperação e respostas reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 5–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
+Estado atual: **Etapa 5 implementada e testada com substitutos, incluindo streaming por HTTP real local; gateway, ingestão, recuperação e respostas reais pendentes**, conforme solicitação de não executar chamadas reais. A compatibilidade real da Etapa 2 e as limitações de extração/revisão visual das Etapas 0–1 permanecem pendentes antes de indexar. Etapas 6–7 não iniciadas. Os critérios gerais seguem parciais, conforme as evidências abaixo.
 
 ## Etapa 0 — Preparar as instruções do projeto
 
@@ -101,15 +101,27 @@ Critérios relacionados: AC-03, AC-04, AC-05, AC-07, AC-08, AC-09 e AC-10 (parci
 
 ## Etapa 5 — Streaming e controle de execução
 
-- [ ] Esclarecer a inconsistência SSE registrada abaixo antes de implementar o comportamento afetado.
-- [ ] Implementar `/chat/stream` reutilizando recuperação e geração de `/chat`.
-- [ ] Implementar eventos, timeout total, limite de concorrência, cancelamento e fechamento de recursos.
-- [ ] Criar cliente de verificação e exemplos com `curl -N`.
-- [ ] Verificar ordem/serialização dos eventos, fontes equivalentes entre rotas, erro terminal sem `done` posterior e liberação de recursos.
-- [ ] Comprovar entrega progressiva em conexão HTTP real com Uvicorn e provedor substituto com intervalos controlados.
+- [x] Revisar a implementação da Etapa 4: preparação de contexto e adaptador reutilizáveis; 209 testes anteriores passaram antes das alterações. Sem bloqueio para implementação/validação com substitutos. Gateway/base reais permanecem pendentes, sem evidência inventada.
+- [x] Esclarecer a inconsistência SSE: o item 3 do escopo solicitado nesta etapa exige explicitamente a explicação local em `delta`, sem geração, e resolve a exceção à regra de origem no gateway. PRD preservado; decisão registrada abaixo.
+- [x] Implementar `/chat/stream` reutilizando admissão, preparação, recuperação, contexto, seleção e abertura/validação da geração de `/chat`; JSON mantém contrato e acumula somente seus próprios fragmentos.
+- [x] Implementar `sources`, deltas não vazios, terminal `done`/`error`, JSON serializado, cabeçalhos sem cache e ausência de geração sem contexto. Falhas na abertura retornam HTTP; falhas na leitura usam SSE sem mudar o status e sem `done` posterior.
+- [x] Implementar prazo total absoluto, capacidade compartilhada sem fila e rejeição antes de chamadas externas; cancelamento por desconexão durante preparação, JSON e SSE; fechamento aguardado e liberação em conclusão, erro, timeout ou cancelamento.
+- [x] Criar `scripts/check_stream.py`, seguro em modo de plano, com opt-in de uma consulta, validação/tempos de eventos e relatórios sem conteúdo; exemplos `curl -N`, configuração e contratos no README/OpenAPI.
+- [x] Verificar ordem/serialização, Unicode/aspas/quebras de linha, fragmentos vazios, fontes equivalentes, contexto vazio, `length`, modelos/padrão/autenticação, falhas pré-cabeçalhos e durante leitura, limpeza, logs e regressão JSON com substitutos.
+- [x] Comprovar entrega progressiva em conexão HTTP real com Uvicorn e gateway substituto controlado, mantendo o provedor em andamento até o cliente receber o primeiro delta; fechar servidor e conexões ao final.
 
-Aceite: fragmentos chegam antes da conclusão; falhas após o início produzem `error`; desconexões liberam recursos; fluxo de RAG permanece único.
-Critérios relacionados: AC-04, AC-06 (local), AC-09, AC-10 e AC-13 (exemplos de consumo).
+Evidências de 28/10/2026: `python -m pytest -q --tb=short --maxfail=3`: **297 passed** (209 anteriores e 88 novos), com o aviso conhecido de depreciação do TestClient. A suíte precisou executar fora do sandbox por restrição de sockets internos/loopback; a fixture padrão continua proibindo conexões externas. Somente os **14 testes HTTP** usam uma exceção explícita restrita a `127.0.0.1`, com Uvicorn em porta temporária e gateway pelo SDK real + `httpx.MockTransport`; configuração, token e Qdrant são sintéticos. Nenhuma credencial real é lida pelas fixtures. A prova de progresso recebeu `sources` e o primeiro `delta` enquanto o provedor ainda aguardava um sinal e não tinha concluído; somente após esse recebimento o teste aguardou 80 ms e liberou o restante. Em uma execução registrada, primeiro delta em **0,056 s** e `done` em **0,138 s** após iniciar o cliente (medição local ilustrativa, não benchmark).
+
+A validação inclui capacidade compartilhada nas duas direções (JSON/SSE), 429 sem novas operações externas, desconexão nas quatro fases pré-cabeçalhos (prontidão, embedding, busca e abertura) e durante a geração de ambas as rotas, além de timeout real por HTTP. O fechamento assíncrono do provedor é aguardado, a vaga pode ser reutilizada e o servidor encerra sem tarefas órfãs. Testes adicionais de ASGI 2.3/2.4 cobrem saída antes da primeira iteração, cancelamento de tarefa, falha/espera na escrita e erro no fechamento. Erros terminais usam somente códigos/mensagens públicos; não há nova geração, fallback ou `done` após falha. O timeout total utiliza o mesmo instante limite na preparação e no envio, em vez de renovar o orçamento a cada fase.
+
+`python -m scripts.check_stream` foi executado **somente no modo de plano**, sem rede ou leitura de token. O cliente `check_stream` também foi exercitado por HTTP real contra o substituto, observando o delta antes da liberação do provedor, com instantes UTC/tempo decorrido e sem imprimir pergunta, resposta, fontes ou credenciais. `pip check`: sem incompatibilidades declaradas (aviso de cache não gravável no sandbox); `git diff --check`: sem problemas. Dependências, PRD e AGENTS preservados. Nenhum modelo real, ingestão, publicação, commit ou alteração das Etapas 6–7.
+
+Limitações: compatibilidade/streaming dos dois modelos e dimensão reais, revisão da extração, ingestão e qualidade semântica continuam pendentes. Swagger/OpenAPI foram verificados em memória, sem conferência visual no navegador, e não contam como prova de streaming. Buffering do proxy e entrega no ambiente publicado só serão verificados na etapa correspondente. Timeout/cancelamento são cooperativos; operações síncronas do Qdrant local não podem ser interrompidas enquanto bloqueiam o ciclo de eventos. O limite em memória exige um worker e não é uma cota global/financeira. A limpeza assíncrona é aguardada e pode acrescentar tempo ao encerramento após o prazo.
+
+Comandos futuros preparados, **não executados com modelos reais**: cada `curl -N` ou `python -m scripts.check_stream --execute` representa uma consulta, com teto de **2 chamadas de modelos** (1 embedding e 1 geração de até `MAX_OUTPUT_TOKENS`). Executar os dois clientes equivale a até 4 chamadas, somente após pré-requisitos e autorização específica. A validação local sem consumo é `python -m pytest -q -s tests/test_stream_http.py`.
+
+Aceite local: fragmentos chegam pela rede antes da conclusão; falhas após o início produzem `error`; desconexões liberam recursos; fluxo de RAG único e JSON preservado. Não conclui compatibilidade com serviços reais nem publicação.
+Critérios relacionados: AC-04, AC-06 (local com substituto), AC-09, AC-10 e AC-13 (exemplos de consumo).
 
 ## Etapa 6 — Avaliar respostas e concluir documentação
 
@@ -156,9 +168,9 @@ Estas são escolhas da especificação, não evidências de compatibilidade já 
 
 Os tamanhos e limites das seções 7, 8 e 11 são pontos de partida, não valores otimizados. Não definir limiar de similaridade ou dimensão de embedding por suposição.
 
-## Inconsistência concreta e esclarecimento pendente
+## Inconsistência concreta e esclarecimento da Etapa 5
 
-- **Seção 9.4 — origem de `delta`:** uma regra restringe `delta` a fragmentos recebidos do gateway; outra exige um `delta` com explicação local quando não há contexto, sem geração externa. As duas regras precisam ser conciliadas antes da implementação afetada na Etapa 5. Possível esclarecimento a confirmar: explicitar que a explicação local de insuficiência de contexto é uma exceção à regra de origem do `delta`. Nenhuma alteração do contrato foi aprovada ou aplicada nesta etapa. Isso não bloqueia a documentação da Etapa 0.
+- **Seção 9.4 — origem de `delta`:** a regra geral restringe deltas a fragmentos do gateway, mas o caso sem contexto exige explicação local sem geração. **Esclarecido pela solicitação explícita da Etapa 5 em 28/10/2026, item 3:** enviar fontes vazias, explicação em `delta` e `done` com `insufficient_context`, sem chamar o modelo de geração. A explicação local é, portanto, a exceção autorizada à origem no gateway. Implementação, documentação e testes seguem esse escopo; PRD não foi alterado silenciosamente.
 
 ## Verificações técnicas pendentes
 

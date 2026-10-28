@@ -16,4 +16,4 @@ def test_health_and_docs_without_external_services(monkeypatch, tmp_path) -> Non
         assert docs.status_code == 200
         assert "text/html" in docs.headers["content-type"]
         schema = client.get("/openapi.json").json()
-        assert set(schema["paths"]) == {"/health", "/ready", "/models", "/chat"}
+        assert set(schema["paths"]) == {"/health", "/ready", "/models", "/chat", "/chat/stream"}

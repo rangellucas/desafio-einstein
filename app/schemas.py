@@ -35,6 +35,20 @@ class ChatResponse(BaseModel):
     finish_reason: Literal["stop", "length", "insufficient_context"]
 
 
+class SourcesEvent(BaseModel):
+    request_id: str
+    model: str
+    sources: list[Source]
+
+
+class DeltaEvent(BaseModel):
+    text: str
+
+
+class DoneEvent(BaseModel):
+    finish_reason: Literal["stop", "length", "insufficient_context"]
+
+
 class ModelsResponse(BaseModel):
     models: list[str]
     default_model: str
