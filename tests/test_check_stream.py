@@ -36,6 +36,39 @@ def test_check_records_event_times_and_no_sensitive_payloads():
     assert len(calls) == 1 and calls[0].url.path == "/chat/stream"
     assert calls[0].headers["authorization"] == "Bearer synthetic-only"
     assert "PRIVATE" not in " ".join(output) and "Saúde" not in " ".join(output)
+    assert result["model"] == "azure/gpt-5-mini"
+    assert result["finish_reason"] == "insufficient_context"
+    assert result["source_count"] == 0
+    assert "references" not in result
+
+
+def test_opt_in_reference_metadata_does_not_expose_excerpts_or_require_another_call():
+    output, calls = [], []
+    sources = frame("sources", {"request_id": "test", "model": "azure/gpt-6-luna", "sources": [
+        {"id": "S1", "document": "synthetic.pdf", "page": 3, "excerpt": "PRIVATE EXCERPT"},
+    ]})
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              text=sources + DELTA + frame("done", {"finish_reason": "stop"}))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = check_stream(client, "http://api.test", "PRIVATE QUESTION", model="azure/gpt-6-luna",
+                              show_references=True, report=output.append)
+    assert len(calls) == 1
+    assert result["references"] == [{"id": "S1", "document": "synthetic.pdf", "page": 3}]
+    assert result["source_count"] == 1 and result["finish_reason"] == "stop"
+    assert "PRIVATE" not in " ".join(output)
+
+
+def test_different_model_in_sse_is_rejected_without_retry():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=SOURCES + DELTA + DONE)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(StreamCheckError, match="unexpected_model"):
+            check_stream(client, "http://api.test", "test", model="azure/gpt-6-luna", report=lambda _: None)
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("content,code", [

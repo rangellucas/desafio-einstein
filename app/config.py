@@ -80,6 +80,10 @@ def model_configuration(env: Mapping[str, str]) -> dict[str, object]:
 def load_api_settings(environ: Mapping[str, str] | None = None) -> ApiSettings:
     env = os.environ if environ is None else environ
     token = env.get("API_ACCESS_TOKEN", "")
+    # Render fornece RENDER=true. Uma configuração incompleta nunca publica
+    # as rotas de geração abertas; o desenvolvimento local segue opcional.
+    if env.get("RENDER") == "true" and not token.strip():
+        raise ValueError("API_ACCESS_TOKEN é obrigatório no Render.")
     if token and not token.strip():
         raise ValueError("API_ACCESS_TOKEN não pode conter apenas espaços.")
     return ApiSettings.model_validate({

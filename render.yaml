@@ -1,0 +1,41 @@
+# Autorizar este repositório GitHub na criação do Blueprint.
+# sync: false solicita os valores no painel; nunca preencher segredos aqui.
+services:
+  - type: web
+    name: desafio-einstein
+    runtime: python
+    plan: free
+    repo: https://github.com/rangellucas/desafio-einstein
+    branch: main
+    autoDeployTrigger: "off"
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      - key: LLM_BASE_URL
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: API_ACCESS_TOKEN
+        generateValue: true
+      # Valores observados na base local; conferir a coleção remota antes do deploy.
+      - key: QDRANT_COLLECTION
+        value: saude_mental_v1
+      - key: EMBEDDING_DIMENSION
+        value: "1536"
+      - key: EMBEDDING_MODEL
+        value: cohere/embed-v4.0
+      - key: CHAT_MODELS
+        value: azure/gpt-5-mini,azure/gpt-6-luna
+      - key: DEFAULT_CHAT_MODEL
+        value: azure/gpt-5-mini
+      - key: MAX_OUTPUT_TOKENS
+        value: "600"
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: "90"
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "2"

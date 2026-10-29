@@ -1,6 +1,8 @@
 # Consulta educacional sobre Saúde Mental
 
-Implementação das **Etapas 1–5** e preparação/documentação da **Etapa 6** do [PRD](PRD.md): inspeção local de PDFs, gateway, indexação retomável em Qdrant, recuperação, `/ready`, `/models` e consultas autenticadas em `/chat` (JSON) e `/chat/stream` (SSE), com prazo total e capacidade compartilhada. A integração foi testada com substitutos e armazenamento local temporário; compatibilidade do gateway, ingestão dos PDFs e qualidade real das respostas permanecem pendentes. Há 12 casos revisados e um procedimento reproduzível de avaliação, ainda sem execução real autorizada. O produto tem finalidade educacional; não realiza diagnóstico, prescrição ou atendimento clínico individual. O estado detalhado está no [checklist](CHECKLIST.md).
+API educacional de consulta sobre saúde mental com RAG, fontes por página física, `/chat` (JSON), `/chat/stream` (SSE), Swagger, autenticação e limites compartilhados. Não realiza diagnóstico, prescrição ou atendimento clínico individual. Requisitos no [PRD](PRD.md); evidências no [checklist](CHECKLIST.md).
+
+**Estado em 29/10/2026:** Etapa 7 preparada para execução manual, conforme orientação do responsável. Ainda sem URL publicada ou Swagger remoto. Base local conferida: quatro documentos, 285 pontos, `cohere/embed-v4.0`, dimensão 1536; recuperação registrada em 7/8. O responsável informou sucesso no gateway, na ingestão e em teste manual da API e autorizou seguir; o aceite formal das respostas da Etapa 6 permanece pendente. Veja [publicação no Render](#publicação-no-render--etapa-7). As seções das etapas anteriores preservam os registros históricos; suas pendências são atualizadas pelo estado acima e pela revisão de aceite ao final.
 
 ## Instalação e execução
 
@@ -345,13 +347,13 @@ python -m scripts.check_stream --execute --url "$API_URL" --model azure/gpt-5-mi
 
 `--question` permite mudar a pergunta e omitir `--model` usa o padrão da API. Sem token configurado no desenvolvimento, omita o header Authorization no curl. Como a rota é POST, não use diretamente `EventSource` do navegador. Use `/chat` no Swagger para explorar JSON/fontes: **Swagger não será usado como prova de entrega incremental**, embora `/chat/stream` esteja documentada no OpenAPI com eventos, exemplos e erros.
 
-Permanecem pendentes o contrato efetivo/streaming dos dois modelos no gateway, ingestão/recuperação/respostas reais e buffering no proxy publicado. Nenhuma dessas verificações é inferida dos substitutos. A Etapa 6 está preparada sem avaliação real; a publicação da Etapa 7 não foi iniciada.
+Na entrega original da Etapa 5, contrato efetivo, base real e buffering remoto permaneciam pendentes. Nenhuma verificação real é inferida dos substitutos. Consulte o estado atualizado da Etapa 7 para as evidências posteriores e as verificações remotas pendentes.
 
 ## Avaliação das respostas — Etapa 6
 
 O [procedimento completo](evals/README.md) registra critérios por caso, revisão humana, privacidade, retomada e repetição restrita. [Resultados](evals/results.md): **avaliação real pendente**, sem pontuações inventadas. Oito perguntas respondíveis (duas por apostila) estão em [retrieval.json](evals/retrieval.json); duas sem suporte, uma tentativa de alterar instruções e uma solicitação clínica individual estão em [behavior.json](evals/behavior.json). As oito páginas esperadas foram reconferidas textualmente. Trechos privados de referência foram salvos somente em `data/evals/stage6/references.json`, com hashes dos PDFs. Isso não conclui a revisão visual da extração.
 
-Os pré-requisitos continuam pendentes: confirmar o gateway/dimensão, revisar ou aceitar explicitamente as perdas de extração e concluir a ingestão. Os comandos reais preparados nas seções anteriores devem ser autorizados separadamente. Antes de qualquer consumo, informar objetivo e teto; as opções de confirmação não substituem autorização.
+Os pré-requisitos originalmente pendentes foram parcialmente resolvidos: gateway informado como aprovado pelo responsável, dimensão/base local conferidas e recuperação em 7/8. Revisão visual/aceite das perdas de extração e avaliação formal das respostas continuam pendentes. Os comandos abaixo descrevem o procedimento completo; **não os repita como parte da publicação**. Novas execuções de avaliação exigem autorização específica e plano que considere as tentativas e os contextos já existentes.
 
 ```bash
 # Somente planejamento; não lê credenciais nem faz chamadas.
@@ -434,8 +436,168 @@ No adaptador do gateway, `iter_chat_parts` é um gerador assíncrono: cada `yiel
 
 Pydantic valida entradas/saídas e proíbe campos extras no pedido; `strict=True` evita converter números em perguntas/modelos. `SecretStr` oculta tokens nas representações; a comparação Bearer usa `hmac.compare_digest` com bytes UTF-8. `set` remove duplicatas de texto preservando a primeira ocorrência pela lista de blocos. `Literal` restringe motivos públicos de término. Não foram criadas classes de serviço ou adicionadas dependências.
 
-SSE e controles da Etapa 5 foram implementados e verificados com substitutos e HTTP local. Nenhuma dimensão real de embedding foi medida e a qualidade real da recuperação/respostas continua pendente. O escopo explícito solicitado para a Etapa 5 esclareceu a inconsistência: o delta local de insuficiência de contexto é a exceção à origem no gateway, registrada no checklist.
+SSE e controles da Etapa 5 foram implementados e verificados com substitutos e HTTP local. A Etapa 7 conferiu dimensão 1536 na base local existente e recuperação registrada em 7/8; qualidade formal das respostas e streaming publicado continuam pendentes. O escopo explícito solicitado para a Etapa 5 esclareceu a inconsistência: o delta local de insuficiência de contexto é a exceção à origem no gateway, registrada no checklist.
 
 O repositório possui histórico prévio, preservado nesta entrega. Nenhum commit foi criado nem arquivo adicionado ao índice durante a Etapa 6. As exclusões de `.env`, `.venv/` e `data/` foram confirmadas na Etapa 1 e as evidências privadas da avaliação foram conferidas como ignoradas nesta etapa. A auditoria local está descrita acima.
 
 O Codex auxiliou na implementação de código, testes e documentação das entregas registradas. Nesta Etapa 6, leu requisitos/checklist/código, reconferiu textualmente páginas das apostilas, elaborou os quatro casos de comportamento, implementou o coletor e a auditoria local e executou testes com substitutos. As evidências textuais ficaram privadas. Não foi usado um LLM como avaliador de respostas; não houve medição de qualidade real nem execução do gateway. Revisões humanas das futuras respostas ainda são necessárias. O [PRD](PRD.md) e as [instruções](AGENTS.md) foram preservados. Nenhuma atividade de publicação ou uso de IA além do registrado é presumida.
+
+## Publicação no Render — Etapa 7
+
+Preparação em **29/10/2026**, encerrada nesse escopo por orientação do responsável; execução dos serviços ficará a seu cargo. **URL da API e Swagger remoto: pendentes.** Não existe evidência de deploy, de streaming publicado ou de persistência remota após reinício. Nenhuma chamada real de modelo foi executada nesta preparação: **consumo observado zero**; uso de tokens/custo das chamadas anteriores não disponível.
+
+### Estado conferido e acessos
+
+- Python local **3.12.3**, fixado em [.python-version](.python-version); dependências de execução preservadas e `pip check` sem incompatibilidades.
+- **387 testes aprovados**, um aviso conhecido do TestClient, em 11,46 s; SDK/gateway simulados e Qdrant temporário, com conexões externas bloqueadas. Os testes HTTP usam somente loopback. Não representam verificações de Render/Qdrant Cloud reais.
+- Coleção **local** `saude_mental_v1`: `cohere/embed-v4.0`, dimensão **1536**, cosseno, pipeline `pypdf-6.21.3-pages-v1`, 285 vetores válidos. Os 285 payloads corresponderam exatamente à preparação dos PDFs atuais, sem gerar embeddings. Contagens na ordem do PRD: **71/60/74/80**. Isso não certifica a extração de imagens ou glifos.
+- Resumo privado da Etapa 6 lido sem modelos: **7/8** na recuperação, R7 sem acerto, R1 padrão coletada mas sem revisão; demais respostas/revisões pendentes. Código 1 do resumo é esperado enquanto o aceite estiver pendente. O responsável informou teste manual correto da API e autorizou prosseguir; essa informação não substitui os 14 julgamentos formais.
+- Repositório informado: [rangellucas/desafio-einstein](https://github.com/rangellucas/desafio-einstein), branch **main**. HEAD local na inspeção: `d6d59cb`; sete commits, sem remoto local. O GitHub conectado (`izzitalk`) recebeu 404 para esse repositório; a leitura por Git exigiu autenticação. Não foi possível conferir a branch/histórico remoto. Nenhum commit, push ou alteração de remoto foi feito.
+- Render ainda sem conexão confirmada; o responsável criará o Qdrant Cloud **Free**. Nenhum serviço, cluster ou recurso pago foi criado. Credenciais privadas não foram exibidas nem lidas para esta preparação.
+
+### Condições gratuitas consultadas
+
+O [Render Free](https://render.com/docs/free) suspende a aplicação após **15 minutos sem tráfego** e a retomada leva aproximadamente um minuto. O disco é efêmero e há **750 horas mensais por workspace**. O [Hobby](https://render.com/pricing) inclui 5 GB de tráfego; o [pipeline Starter](https://render.com/docs/build-pipeline) inclui 500 minutos mensais. Excedentes podem ser cobrados se houver meio de pagamento; conferir o consumo/limites no painel antes de criar o serviço. Usar somente Hobby + instância **Free**, sem upgrade, disco persistente ou mecanismos para manter o processo ativo.
+
+O [Qdrant Free](https://qdrant.tech/documentation/cloud/create-cluster/) oferece um nó, 1 GB de RAM, 0,5 vCPU e 4 GB de disco; não exige cartão. A política consultada prevê suspensão após **uma semana sem uso** e exclusão após **quatro semanas de inatividade** se não reativado. Confirmar as condições exibidas ao criar o cluster. Guardar a base local e os PDFs privados para recuperação; se a base local também for perdida, reingestão exigirá plano e autorização de embeddings. Não configurar pings artificiais.
+
+### 1. Preparar o Qdrant Cloud sem recalcular embeddings
+
+No [painel Qdrant Cloud](https://cloud.qdrant.io/), crie um cluster **Free**. Se houver cluster/coleção anterior, confira antes de criar outro. O servidor precisa suportar metadados de coleção usados pelo cliente; falhas de contrato precisam ser investigadas antes de publicar.
+
+Crie uma chave de escrita para a transferência e outra **read-only**, preferencialmente restrita à coleção, para o Render. O [controle granular](https://qdrant.tech/documentation/cloud/authentication/) permite separar esses acessos. Não coloque a chave de escrita na API. URL/chaves são preenchidas no ambiente privado e no painel; não enviar ao chat nem versionar.
+
+Prepare manualmente um arquivo privado `.env.qdrant-write` com os nomes abaixo (todos ignorados pelo Git). Não substitua o `.env` local existente:
+
+| Variável | Valor a configurar no ambiente privado |
+| --- | --- |
+| `QDRANT_URL` | Endpoint HTTPS fornecido pelo cluster, incluindo a porta informada. |
+| `QDRANT_API_KEY` | Chave de escrita do cluster Free. |
+| `QDRANT_COLLECTION` | `saude_mental_v1`. |
+| `EMBEDDING_DIMENSION` | `1536`, confirmado na coleção local. |
+
+Pare a API e qualquer processo que utilize `data/qdrant`. A transferência lê os vetores locais existentes, sem abrir cliente de gateway, recalcular embeddings ou precisar dos PDFs:
+
+```bash
+source .venv/bin/activate
+# Primeiro, plano sem conexão ou leitura de credenciais.
+python -m scripts.transfer_vectors
+set -a
+source .env.qdrant-write
+set +a
+# Execução manual futura: zero chamadas de modelos.
+python -m scripts.transfer_vectors --execute
+```
+
+[scripts/transfer_vectors.py](scripts/transfer_vectors.py) valida a origem e copia somente para uma coleção ausente; preserva contrato, manifesto, IDs, payloads e vetores em lotes de até 32. Em coleções novas, prepara quatro índices de payload `keyword` antes dos pontos, necessários aos filtros da prontidão no Qdrant Cloud. Confere a leitura de volta com tolerância para normalização float32 de cosseno. Se a coleção remota já existir, só a reutiliza após conferir prontidão e equivalência integral, sem escrever. Coleções incompatíveis, vazias ou parciais são preservadas e provocam falha. Uma interrupção pode deixar uma **nova** coleção parcial: não repetir nem apagar automaticamente; investigar o estado antes de decidir como recuperar.
+
+Se uma coleção previamente transferida falhar com `missing_payload_index`, mantenha os dados. Com chave de escrita no ambiente exportado, execute separadamente:
+
+```bash
+python -m scripts.transfer_vectors --execute --prepare-payload-indexes
+```
+
+Esse modo valida o contrato/metadados e cria somente índices ausentes em `document_name`, `document_hash`, `pipeline_version` e `embedding_model`, todos `keyword`. São até quatro operações de criação, sem abrir o índice local, regravar pontos/vetores ou consumir modelos. Índices existentes compatíveis são reutilizados e tipos divergentes são recusados antes das escritas; nenhuma coleção/índice é removida. `indexes_prepared` confirma a preparação, não a equivalência integral ou a prontidão. Se houver falha de criação, os índices já criados são preservados; após corrigir a causa, esse modo pode ser retomado. Volte à chave de consulta, recarregue o ambiente e execute `--execute --diagnose-ready`, depois `--execute --verify-only` para comparar a base completa. Não combine a preparação com opções de leitura. Na API em execução, `/ready` pode ser consultado novamente sem reinício se a configuração não mudou.
+
+Depois configure `.env.qdrant-read` com os mesmos nomes e a chave de consulta, exporte esse arquivo e execute:
+
+```bash
+set -a
+source .env.qdrant-read
+set +a
+python -m scripts.transfer_vectors --execute --verify-only
+```
+
+Esse modo não escreve. Resultado esperado: `status=verified`, `points=285`, `written=0`, `reused=285`, `model_calls=0`. Ainda **não obtido remotamente** nesta preparação. Não execute `scripts.ingest` para migrar uma base que já possui vetores válidos.
+
+No comando de transferência, `async`/`await` aguardam as operações Qdrant; `AsyncExitStack` fecha os clientes local e remoto mesmo em erro. O ciclo de transferência é manual e independente do `lifespan` da API.
+
+### 2. Publicar o código no GitHub
+
+Para investigar `/ready` com `base_unavailable`, use `python -m scripts.transfer_vectors --execute --diagnose-ready` com o mesmo ambiente exportado antes de iniciar a API. Esse modo inclui a mesma função de prontidão da API, com até nove requisições de leitura (GETs e POSTs de contagem), sem abrir a base local, escrever no cluster ou consumir modelos. O relatório identifica `check_ready`, códigos internos conhecidos e a pista `missing_payload_index` quando reconhecida, com nomes de campos conhecidos e sem o corpo da resposta. A presença de 285 pontos no painel não substitui essa verificação nem a comparação integral da transferência. Diagnóstico de prontidão não comprova o gateway ou uma resposta RAG.
+
+Se a transferência falhar com erro remoto genérico, execute `python -m scripts.transfer_vectors --execute --diagnose-connection` com as variáveis remotas já exportadas. Esse modo faz no máximo dois GETs (listar coleções e verificar existência), sem abrir o índice local, escrever ou consumir modelos. O relatório mostra operação, status HTTP e categorias reconhecidas, sem corpo da resposta, nomes de coleções retornadas, endpoint ou credenciais. As categorias são pistas, não confirmação de causa. Uma chave restrita pode permitir verificar a coleção e impedir listar todas. Não use esse diagnóstico como autorização para repetir uma cópia parcial.
+
+Autorize a conta correta a acessar o repositório e conecte-o ao Render. O remoto Git local ainda precisa ser configurado pelo responsável. Confira o histórico remoto antes de enviar `main`, preservando seus commits. **Não use force push.**
+
+Arquivos desta preparação que precisam ser revisados, commitados e enviados pelo responsável: `.python-version`, `render.yaml`, `app/config.py`, `.env.example`, `scripts/transfer_vectors.py`, `scripts/check_stream.py`, `tests/test_deployment_config.py`, `tests/test_transfer_vectors.py`, `tests/test_check_stream.py`, `README.md`, `CHECKLIST.md` e `evals/results.md`. Os sete commits locais anteriores também precisam estar na branch publicada; não foi possível compará-los com o remoto. Antes de publicar:
+
+```bash
+python -m scripts.audit_git
+git diff --check
+git status --short
+```
+
+A auditoria é heurística e local: não certifica histórico remoto inacessível nem formatos de segredos desconhecidos. Não enviar `.env*` privados, `data/`, `.venv/`, PDFs, textos, vetores ou índices. Não houve commit/push automático nesta preparação.
+
+### 3. Criar o serviço Render
+
+Após o código estar no GitHub e a coleção remota ter sido validada, use **New → Blueprint** no [Render](https://dashboard.render.com/) e selecione o repositório/branch acima. Revise [render.yaml](render.yaml) antes de aplicar. Alternativamente use **New → Web Service** preenchendo os mesmos campos:
+
+| Campo | Configuração |
+| --- | --- |
+| Runtime / instância | Python / **Free**, uma instância, sem disco. |
+| Branch / diretório raiz | `main` / raiz do repositório. |
+| Python | **3.12.3**, por `.python-version`; remover qualquer `PYTHON_VERSION` conflitante do painel. |
+| Build | `pip install -r requirements.txt` |
+| Start | `uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1` |
+| Health check | `/health` |
+| Auto-deploy | Desativado (`autoDeployTrigger: "off"`); aplicar atualizações manualmente. |
+
+O [Render aceita a versão fixada](https://render.com/docs/python-version); a variável `PYTHON_VERSION` tem precedência. A [referência Blueprint](https://render.com/docs/blueprint-spec) define `sync: false` para preenchimento privado e `generateValue: true` para gerar um segredo. A configuração foi revisada documentalmente; validação do Blueprint no painel/build real ainda pendente.
+
+| Ambiente do Render | Configuração |
+| --- | --- |
+| `LLM_BASE_URL` / `LLM_API_KEY` | Endpoint e chave efetivos do gateway, preenchidos no painel. |
+| `QDRANT_URL` / `QDRANT_API_KEY` | Endpoint remoto e **chave de consulta**, preenchidos no painel. |
+| `QDRANT_COLLECTION` / `EMBEDDING_DIMENSION` | `saude_mental_v1` / `1536`, após validação remota. |
+| `EMBEDDING_MODEL` | `cohere/embed-v4.0` |
+| `CHAT_MODELS` / `DEFAULT_CHAT_MODEL` | `azure/gpt-5-mini,azure/gpt-6-luna` / `azure/gpt-5-mini` |
+| `MAX_OUTPUT_TOKENS` / `REQUEST_TIMEOUT_SECONDS` / `MAX_CONCURRENT_REQUESTS` | `600` / `90` / `2` |
+| `API_ACCESS_TOKEN` | Gerado pelo Blueprint; no fluxo Web Service manual, preencher com token aleatório gerado em ambiente privado. |
+| `PORT` / `RENDER` | Fornecidos pelo Render; não definir manualmente. |
+
+Com [`RENDER=true`](https://render.com/docs/environment-variables), ausência de token impede o startup **antes de abrir clientes**. O administrador obtém o token em **Environment** e o transmite aos usuários por canal privado, separado da chave do gateway. No Swagger, **Authorize** recebe somente esse token, sem o prefixo `Bearer`. Para clientes locais, exporte `API_ACCESS_TOKEN` em ambiente privado; não cole seu valor em comandos versionados, relatórios públicos ou nesta conversa. O backend não carrega `.env` automaticamente.
+
+Não configurar `QDRANT_PATH` como armazenamento publicado. Build e startup não executam ingestão, avaliação nem chamadas de modelos. A API abre/fecha clientes compartilhados no `lifespan`; a coleção fica fora do disco efêmero. A chave de consulta não permite ingestão pelo serviço.
+
+### 4. Verificar a URL real e reiniciar
+
+Copie a URL **real** exibida no Render após o primeiro deploy e registre aqui a API e seu `/docs`; não deduza o endereço pelo nome do serviço. Antes das consultas cobradas, confira:
+
+1. `GET /health`: 200, `{"status":"ok"}`; `GET /ready`: 200, `{"status":"ready"}`; `GET /models`: os dois modelos e o padrão esperado. Falha de prontidão interrompe as consultas.
+2. Abra `/docs` no navegador, confira a renderização e **Authorize**. Carregar HTML/OpenAPI por HTTP não basta para registrar essa conferência visual.
+3. Sem Bearer, `POST /chat` e `/chat/stream` devem retornar 401. Com token e modelo `inexistente`, devem retornar 422. Não há consumo de modelos nesses casos; a ordem anterior ao gateway também é coberta pelos testes com substitutos.
+
+O plano original autorizou **uma consulta JSON omitindo `model`** e **uma SSE com `azure/gpt-6-luna`**: no máximo **2 embeddings + 2 gerações**, até 600 tokens solicitados por geração, sem retentativas. Nenhuma foi executada; não execute também os exemplos antigos ou a avaliação completa. Antes da execução futura, reafirme objetivo/teto e acompanhe o consumo no gateway. Não repetir uma tentativa falha automaticamente.
+
+Faça a consulta JSON uma única vez por `/docs` **ou** pelo cliente HTTP, com a pergunta educacional sobre participação da atenção primária no cuidado em saúde mental. Confira `model=azure/gpt-5-mini`, término, referências e coerência entre resposta, documento, página física e excerto. Não publicar perguntas/respostas/trechos privados como logs. Para a única consulta SSE, com URL e token privados já exportados:
+
+```bash
+python -m scripts.check_stream --execute --url "$API_URL" --model azure/gpt-6-luna --show-references
+```
+
+O cliente relata instantes de `sources`, `delta` e `done`, modelo efetivo, quantidade de fontes e motivo de término. `--show-references` permite conferir IDs/documentos/páginas na mesma consulta, sem imprimir excertos, pergunta, resposta ou token; o padrão omite essas referências. Registrar `first_delta_seconds < terminal_seconds`, múltiplos deltas quando disponíveis, conferir fontes/páginas e término `stop`; uma resposta final recebida não prova streaming. Os testes controlados locais provam progressão enquanto o provedor está bloqueado; o comportamento do proxy real precisa da medição publicada. Não executar um segundo `curl -N` para conferir o mesmo caso dentro desse orçamento.
+
+Depois use **Restart service** no Render e repita somente `/health`, `/ready` e `scripts.transfer_vectors --execute --verify-only` com chave de consulta para conferir que a coleção continua íntegra. Revise build/logs para confirmar os comandos esperados e ausência de ingestão/embeddings no startup; não habilite logs de corpos ou autorização. A verificação de base não consome modelos. Cold start e suspensão do Qdrant continuam sendo limitações gratuitas, sem keep-alive artificial.
+
+### Revisão dos critérios AC-01 a AC-14
+
+| Critério | Evidência disponível em 29/10/2026 | Pendência |
+| --- | --- | --- |
+| AC-01 | Comando reproduzível, dry-run dos quatro PDFs e base local com 285 pontos compatíveis. Ingestão informada pelo responsável. | Relatório original da ingestão real não conferido nesta preparação. |
+| AC-02 | Todos os 285 payloads conferidos contra a preparação dos PDFs atuais, com documento/página física; 285 vetores válidos. | Qualidade visual/perdas de extração; confirmação da cópia remota. |
+| AC-03 | Recuperação real registrada em 7/8; ordem antes da geração testada com substitutos. | Pertinência integral dos trechos e R7. |
+| AC-04 | Contratos/fontes testados; R1 padrão coletada; teste manual correto informado pelo responsável. | Revisão de todas as afirmações materiais dos casos. |
+| AC-05 | Dois modelos pela mesma integração nos testes; compatibilidade real informada pelo responsável. | Consulta de cada modelo no ambiente publicado. |
+| AC-06 | Progressão HTTP local comprovada com provedor controlado. | SSE e tempos na URL publicada. |
+| AC-07 | Instruções e insuficiência de contexto testadas com substitutos. | N1/N2 reais e revisões formais. |
+| AC-08 | OpenAPI/HTML, Bearer e contratos verificados com substitutos; teste manual da API informado. | Renderização/Authorize no navegador publicado. |
+| AC-09 | 387 testes sem credenciais/modelos reais; conexões externas bloqueadas. | Nenhuma nesta preparação local; sem presumir execução em CI. |
+| AC-10 | Erros, limites, cancelamento e liberação testados com substitutos/HTTP loopback. | Verificação operacional dos erros no Render. |
+| AC-11 | Blueprint e procedimento de coleção remota preparados. | Deploy, `/ready` e integridade remota após reinício. |
+| AC-12 | Auditoria heurística local sem achados; dados/segredos ignorados. | Histórico remoto não acessível para conferência. |
+| AC-13 | Instalação, ingestão, consumo e publicação manual documentados. | URL real, execução dos passos remotos por outra pessoa. |
+| AC-14 | Decisões, limites, evidências reais versus substitutos, uso de IA e resultados pendentes registrados. | Resultado final da publicação e aceite semântico formal. |
+
+Uso de IA nesta preparação: Codex revisou requisitos/código/evidências, consultou documentação oficial dos planos, preparou configuração e transferência e executou os testes sem modelos. Não julgou a qualidade das respostas com outro LLM, não publicou serviços e não realizou nova ingestão.

@@ -2,14 +2,16 @@
 
 Data: **28/10/2026**. Estado: **preparado, avaliação real pendente**. Nenhum gateway ou modelo real foi consumido nesta etapa; nenhuma dimensão ou pontuação semântica foi presumida.
 
+**Atualização de estado em 29/10/2026, durante a preparação da Etapa 7:** o responsável informou gateway/ingestão aprovados e teste manual correto da API, autorizando seguir. O resumo privado existente, lido sem modelos, confirma recuperação **7/8** (R7 sem acerto), R1 padrão **coletada, sem revisão**, demais respostas/revisões pendentes; `quality_status=pending`, saída 1 esperada. A base local foi conferida com 285 pontos/dimensão 1536 e payloads correspondentes ao processamento dos PDFs atuais. Isso atualiza os bloqueios históricos abaixo, sem concluir o aceite formal da seção 12.2. Não houve nova coleta ou repetição de avaliação. A publicação foi somente preparada, para execução posterior pelo responsável.
+
 | Verificação | Evidência obtida | Pendente |
 | --- | --- | --- |
 | Conjunto | R1–R8 preservadas e páginas reconferidas textualmente; N1/N2/I1/C1 definidos, critérios em [README](README.md). | Revisão visual geral da extração. |
 | Evidências privadas | `references.json` criado localmente para os quatro PDFs, com páginas, hashes e triagem textual dos temas sem suporte. | Não versionar nem publicar. |
-| Recuperação real | Nenhuma execução. | Oito embeddings; fonte no top-4 em ao menos 7/8 e revisão da pertinência do trecho. |
-| Respostas padrão | Nenhuma execução. | 12 casos e revisão humana de fundamentação, referências, completude e limites/segurança. |
+| Recuperação real | Estado privado existente: 7/8 fontes esperadas no top-4; R7 sem acerto. | Revisão da pertinência integral dos trechos; não repetir embeddings nesta preparação. |
+| Respostas padrão | R1 coletada no estado privado existente, sem revisão. | Demais 11 casos e revisões humanas de fundamentação, referências, completude e limites/segurança. |
 | Respostas alternativas | Nenhuma execução. | R1/R7 no outro modelo permitido, sem alteração de código. |
-| Critérios 12.2 do PRD | Sem resultados reais para aplicar o aceite. | Todas as metas e registro das falhas/correções/repetições. |
+| Critérios 12.2 do PRD | Meta numérica de recuperação atingida; qualidade formal pendente. Teste manual correto informado pelo responsável. | Metas de respostas/revisões e registro das falhas/correções/repetições, com autorização específica para novo consumo. |
 
 | Caso | Recuperação top-4 | Fundamentação | Referências | Completude | Limites | Segurança |
 | --- | --- | --- | --- | --- | --- | --- |

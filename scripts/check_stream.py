@@ -22,6 +22,7 @@ class StreamCheckError(ValueError):
 def check_stream(
     client: httpx.Client, url: str, question: str, model: str | None = None,
     *, token: str | None = None, report: Callable[[str], None] = print,
+    show_references: bool = False,
 ) -> dict[str, object]:
     started = perf_counter()
     first_delta = None
@@ -29,6 +30,8 @@ def check_stream(
     event_name = ""
     data: list[str] = []
     names: list[str] = []
+    sources: SourcesEvent | None = None
+    finish_reason = None
     headers = {"Accept": "text/event-stream"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -54,7 +57,9 @@ def check_stream(
                 try:
                     payload = json.loads("\n".join(data))
                     if event_name == "sources" and not names:
-                        SourcesEvent.model_validate(payload)
+                        sources = SourcesEvent.model_validate(payload)
+                        if model is not None and sources.model != model:
+                            raise StreamCheckError("unexpected_model")
                     elif event_name == "delta" and names:
                         delta = DeltaEvent.model_validate(payload)
                         if not delta.text:
@@ -62,7 +67,7 @@ def check_stream(
                         if first_delta is None:
                             first_delta = now
                     elif event_name == "done" and names and first_delta is not None:
-                        DoneEvent.model_validate(payload)
+                        finish_reason = DoneEvent.model_validate(payload).finish_reason
                         terminal = now
                     elif event_name == "error":
                         ErrorDetail.model_validate(payload)
@@ -81,7 +86,16 @@ def check_stream(
     result = {
         "events": names, "first_delta_seconds": first_delta, "terminal_seconds": terminal,
         "delta_before_done": first_delta < terminal,
+        "model": sources.model if sources else None,
+        "finish_reason": finish_reason,
+        "source_count": len(sources.sources) if sources else 0,
     }
+    if show_references and sources:
+        # Opt-in expõe apenas identificadores e páginas, nunca os excertos.
+        result["references"] = [
+            {"id": source.id, "document": source.document, "page": source.page}
+            for source in sources.sources
+        ]
     report(json.dumps(result))
     return result
 
@@ -92,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--url", default="http://127.0.0.1:8000", help="URL base da API, sem credenciais/query.")
     parser.add_argument("--question", default="Como a atenção primária participa do cuidado em saúde mental?")
     parser.add_argument("--model", choices=CHAT_MODELS)
+    parser.add_argument("--show-references", action="store_true", help="Mostrar somente IDs, documentos e páginas, sem excertos.")
     parser.add_argument("--timeout", type=float, default=100, help="Timeout de leitura HTTP em segundos.")
     args = parser.parse_args(argv)
     url = urlsplit(args.url)
@@ -103,7 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     print("Execução: 1 consulta HTTP; até 2 chamadas de modelos (1 embedding e 1 geração), sem repetição.")
     try:
         with httpx.Client(timeout=args.timeout, follow_redirects=False, trust_env=False) as client:
-            result = check_stream(client, args.url, args.question, args.model, token=os.environ.get("API_ACCESS_TOKEN"))
+            result = check_stream(client, args.url, args.question, args.model,
+                                  token=os.environ.get("API_ACCESS_TOKEN"), show_references=args.show_references)
         return 0 if result["delta_before_done"] else 1
     except (StreamCheckError, httpx.HTTPError, ValueError) as error:
         # Nunca exibir URLs, headers, corpos ou mensagens internas de transporte.
