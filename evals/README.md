@@ -1,10 +1,10 @@
 # Avaliação manual com fontes
 
-Estado em **28/10/2026**: preparação e infraestrutura verificadas; **nenhuma execução com modelos reais**. [Resultados e pendências](results.md). A aprovação de testes sintéticos não mede qualidade semântica.
+Estado em **29/10/2026**: avaliação e revisão das respostas concluídas, conforme confirmação do responsável. O resultado numérico registrado da recuperação é **7/8**. [Resultados e origem das evidências](results.md). A aprovação de testes sintéticos não mede qualidade semântica.
 
 [retrieval.json](retrieval.json) mantém as oito perguntas originais R1–R8, duas por documento, com páginas físicas, elementos mínimos e comportamento esperado. As páginas 12/43, 9/15, 12/15 e 26/59, respectivamente na ordem do PRD, foram reconferidas textualmente nesta etapa. [behavior.json](behavior.json) acrescenta N1/N2 (sem suporte), I1 (alteração de instruções) e C1 (diagnóstico/prescrição individual). As perguntas não foram ajustadas para obter aprovação. R1 e R7 são a amostra previamente escolhida para o alternativo: definição conceitual e limites de uma prática de apoio.
 
-As evidências integrais ficam em `data/evals/stage6/references.json`, ignorado pelo Git: hashes dos quatro PDFs, texto extraído de cada página esperada e contagem de páginas contendo os termos de triagem de N1/N2. A leitura das páginas sustenta os elementos mínimos em `retrieval.json`; a contagem zero dos termos não é prova isolada de ausência semântica. A triagem textual dos quatro documentos, as amostras já inspecionadas e a diferença temática fundamentam os casos sem suporte; não houve leitura humana integral das 257 páginas nesta etapa. A conferência visual geral e as perdas de extração permanecem pendentes. Não incluir trechos, prompts, respostas reais, vetores ou esse diretório no conteúdo público.
+As evidências integrais ficam em `data/evals/stage6/references.json`, ignorado pelo Git: hashes dos quatro PDFs, texto extraído de cada página esperada e contagem de páginas contendo os termos de triagem de N1/N2. A leitura das páginas sustenta os elementos mínimos em `retrieval.json`; a contagem zero dos termos não é prova isolada de ausência semântica. A triagem textual, as amostras inspecionadas e a diferença temática fundamentam os casos sem suporte. A revisão visual e o aceite das perdas de extração foram confirmados pelo responsável. Não incluir trechos, prompts, respostas reais, vetores ou esse diretório no conteúdo público.
 
 ## Procedimento reproduzível
 
@@ -23,9 +23,9 @@ Prepare somente as evidências locais, sem modelos:
 python -m scripts.evaluate --phase references --execute
 ```
 
-Esse comando recusa sobrescrever referências. A preparação local já foi executada nesta entrega; reutilize o diretório existente. Para nova rodada com outros documentos/perguntas/pipeline, escolha `--run-dir data/evals/nova-rodada` em **todos** os comandos. Somente subdiretórios de `data/evals/` são aceitos, sem links simbólicos; diretório da rodada usa 0700 e arquivos 0600. Mantenha uma única execução por rodada e não edite o estado coletado.
+Esse comando recusa sobrescrever referências. Para consultar a rodada concluída, reutilize o diretório existente. Para nova rodada com outros documentos/perguntas/pipeline, escolha `--run-dir data/evals/nova-rodada` em **todos** os comandos. Somente subdiretórios de `data/evals/` são aceitos, sem links simbólicos; diretório da rodada usa 0700 e arquivos 0600. Mantenha uma única execução por rodada e não edite o estado coletado.
 
-Antes das chamadas reais, confirme os pré-requisitos do [README](../README.md): contrato do gateway, dimensão medida, revisão da extração e ingestão completa. Não marque as opções de confirmação antes dessas verificações. Pare a API se usar o mesmo armazenamento Qdrant local. Exporte a configuração privada sem imprimir chaves. **Os comandos seguintes estão preparados, mas dependem de autorização específica de consumo.**
+Para uma nova execução, confirme os pré-requisitos do [README](../README.md): contrato do gateway, dimensão medida, revisão da extração e ingestão completa. Não marque as opções de confirmação antes dessas verificações. Pare a API se usar o mesmo armazenamento Qdrant local. Exporte a configuração privada sem imprimir chaves. **Os comandos seguintes descrevem a sequência reproduzível; nova execução depende de autorização específica de consumo.**
 
 ```bash
 # 1. Oito perguntas respondíveis: até 8 embeddings, nenhuma geração.
@@ -71,7 +71,7 @@ Código 0 nessa fase exige 7/8 na recuperação e as **14 revisões** aprovadas,
 
 ## Falhas e repetição restrita
 
-Se observar falha, registre o contexto e a afirmação afetada, faça uma correção pequena e justificada e planeje novo teto antes de pedir autorização. Não modifique pergunta/gabarito apenas para passar nem escolha limiar de similaridade sem dados relevantes e irrelevantes. Não houve ajuste do RAG nesta entrega, porque não há falha semântica real observada.
+Se observar falha, registre o contexto e a afirmação afetada, faça uma correção pequena e justificada e planeje novo teto antes de pedir autorização. Não modifique pergunta/gabarito apenas para passar nem escolha limiar de similaridade sem dados relevantes e irrelevantes. Esta atualização documental não altera o RAG nem os casos de avaliação.
 
 Exemplo de repetição **após autorização**, somente de R3 no padrão:
 

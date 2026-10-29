@@ -1,37 +1,36 @@
-# Registro de resultados — Etapa 6
+# Resultados da avaliação
 
-Data: **28/10/2026**. Estado: **preparado, avaliação real pendente**. Nenhum gateway ou modelo real foi consumido nesta etapa; nenhuma dimensão ou pontuação semântica foi presumida.
+Atualizado em **29/10/2026**. Avaliação, revisão das respostas e verificações da publicação **concluídas, conforme confirmação do responsável**. Este registro substitui o estado inicial de preparação e pendências.
 
-**Atualização de estado em 29/10/2026, durante a preparação da Etapa 7:** o responsável informou gateway/ingestão aprovados e teste manual correto da API, autorizando seguir. O resumo privado existente, lido sem modelos, confirma recuperação **7/8** (R7 sem acerto), R1 padrão **coletada, sem revisão**, demais respostas/revisões pendentes; `quality_status=pending`, saída 1 esperada. A base local foi conferida com 285 pontos/dimensão 1536 e payloads correspondentes ao processamento dos PDFs atuais. Isso atualiza os bloqueios históricos abaixo, sem concluir o aceite formal da seção 12.2. Não houve nova coleta ou repetição de avaliação. A publicação foi somente preparada, para execução posterior pelo responsável.
+O conjunto contém 12 casos: oito perguntas respondíveis (R1–R8), duas sem suporte (N1/N2), uma tentativa de alterar instruções (I1) e uma solicitação clínica individual (C1). A amostra alternativa usa R1 e R7. Os critérios estão no [guia de avaliação](README.md) e na seção 12.2 do [PRD](../PRD.md).
 
-| Verificação | Evidência obtida | Pendente |
+## Resultados e origem das evidências
+
+| Verificação | Resultado | Origem |
 | --- | --- | --- |
-| Conjunto | R1–R8 preservadas e páginas reconferidas textualmente; N1/N2/I1/C1 definidos, critérios em [README](README.md). | Revisão visual geral da extração. |
-| Evidências privadas | `references.json` criado localmente para os quatro PDFs, com páginas, hashes e triagem textual dos temas sem suporte. | Não versionar nem publicar. |
-| Recuperação real | Estado privado existente: 7/8 fontes esperadas no top-4; R7 sem acerto. | Revisão da pertinência integral dos trechos; não repetir embeddings nesta preparação. |
-| Respostas padrão | R1 coletada no estado privado existente, sem revisão. | Demais 11 casos e revisões humanas de fundamentação, referências, completude e limites/segurança. |
-| Respostas alternativas | Nenhuma execução. | R1/R7 no outro modelo permitido, sem alteração de código. |
-| Critérios 12.2 do PRD | Meta numérica de recuperação atingida; qualidade formal pendente. Teste manual correto informado pelo responsável. | Metas de respostas/revisões e registro das falhas/correções/repetições, com autorização específica para novo consumo. |
+| Gateway | Compatibilidade aprovada; embeddings de documento e pergunta com dimensão 1536 e streaming dos dois modelos com término `stop`. | Execução manual informada pelo responsável. |
+| Extração e base | Quatro PDFs, 257 páginas e 285 trechos. Coleção `saude_mental_v1`, dimensão 1536, distância de cosseno; 285 payloads conferidos contra a preparação dos PDFs. | Inspeção e conferência local registradas anteriormente. Revisão visual e aceite das perdas confirmados pelo responsável. |
+| Recuperação | Fonte esperada no top-4 em **7/8** perguntas; R7 sem acerto no resultado registrado. Meta mínima de recuperação atingida. | Resultado do estado privado conferido anteriormente. Nenhuma nova pontuação foi fornecida nesta atualização. |
+| Respostas padrão | Conjunto de 12 casos e revisão das respostas concluídos. Inclui fundamentação, referências, completude, ausência de suporte e limites educacionais. | Confirmação do responsável, sem nova coleta ou transcrição de notas por caso nesta atualização. |
+| Modelo alternativo | Amostra R1/R7 e revisões concluídas. | Confirmação do responsável. |
+| Critérios de qualidade | Conclusão da avaliação e das revisões confirmada pelo responsável. O resumo automatizado exige ao menos 7/8 na recuperação e 14 revisões aprovadas. | Confirmação de conclusão; o comando de resumo não foi reexecutado nesta atualização. |
+| Testes automatizados | Última suíte completa registrada: **387 aprovados**, com um aviso conhecido do TestClient. Correção posterior de índices de payload: **24 testes específicos aprovados**. | Testes anteriores com gateway simulado, Qdrant temporário e HTTP local; não medem qualidade semântica. |
 
-| Caso | Recuperação top-4 | Fundamentação | Referências | Completude | Limites | Segurança |
-| --- | --- | --- | --- | --- | --- | --- |
-| R1 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R2 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R3 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R4 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R5 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R6 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R7 | Pendente | Pendente | Pendente | Pendente | — | — |
-| R8 | Pendente | Pendente | Pendente | Pendente | — | — |
-| N1 | — | Pendente | Pendente | Pendente | Pendente | — |
-| N2 | — | Pendente | Pendente | Pendente | Pendente | — |
-| I1 | — | Pendente | Pendente | Pendente | — | Pendente |
-| C1 | — | Pendente | Pendente | Pendente | Pendente | — |
-| R1 alternativo | Reutilizada quando coletada | Pendente | Pendente | Pendente | — | — |
-| R7 alternativo | Reutilizada quando coletada | Pendente | Pendente | Pendente | — | — |
+As confirmações do responsável atualizam o registro anterior de R1 coletada sem revisão e demais respostas pendentes. Não foram produzidas novas medições, notas de revisão ou saídas de comandos para preencher o relatório. As evidências integrais, respostas e revisões permanecem privadas em `data/evals/`, fora do Git.
 
-Bloqueios herdados: gateway/dimensão ainda não confirmados, perdas de extração sem revisão/aceite e ingestão completa não executada. A infraestrutura foi validada com substitutos; respostas sintéticas de testes não são respostas dos modelos. Não há falhas semânticas reais observadas nem correções de prompt/recuperação justificadas por essa avaliação. Não foi aplicado limiar de similaridade.
+## Publicação
 
-Reaproveitamento planejado: oito contextos para a fase padrão; R1/R7 também para o alternativo. Teto da avaliação: **12 embeddings + 14 gerações**. Pré-requisitos separados, ainda pendentes: compatibilidade **2 embeddings + 2 gerações** e ingestão inicial **até 18 embeddings**, conforme os 285 trechos do dry-run anterior. Executar uma vez cada um desses procedimentos representa teto conjunto de **32 embeddings + 16 gerações (48 chamadas)**. Não executar os antigos testes manuais de chat/stream ou `check_retrieval` adicionalmente sem novo plano de consumo.
+- **API:** [desafio-einstein.onrender.com](https://desafio-einstein.onrender.com/)
+- **Swagger:** [desafio-einstein.onrender.com/docs](https://desafio-einstein.onrender.com/docs)
 
-Os testes automatizados verificam contratos, apuração, privacidade, reutilização, ordem das fases e recursos, sem avaliar a correção dos modelos. A evidência final da suíte e da auditoria está no [checklist](../CHECKLIST.md). Limitações permanecem mesmo após um futuro aceite: conjunto pequeno, glifos/ordem de extração, conteúdos em imagens/links não interpretados, trechos separados por página, dependência do julgamento humano e possibilidade de alucinação fora dos casos observados. Publicação não pertence a esta etapa.
+O responsável confirmou o funcionamento de `/health`, `/ready` e `/models`, do Swagger e da autenticação, das consultas JSON e SSE e da preservação da base remota após reinício. A correção dos índices de payload do Qdrant Cloud e as verificações remotas também foram confirmadas como concluídas. A URL foi fornecida pelo responsável; estes endpoints não foram consultados nesta atualização documental.
+
+A entrega progressiva local já havia sido comprovada por HTTP com Uvicorn e provedor controlado: o primeiro `delta` chegou antes da conclusão da geração. A validação do ambiente publicado foi confirmada pelo responsável, sem tempos adicionais registrados aqui.
+
+## Consumo e limites
+
+O teto planejado de uma rodada completa é **12 embeddings de perguntas e 14 gerações**, com até 600 tokens de saída solicitados por geração na configuração padrão. Esse teto não representa consumo medido. Uso total de tokens, custo e duração das execuções reais não foram informados. Esta atualização consumiu **zero chamadas de modelos** e não repetiu avaliação, ingestão ou publicação.
+
+O conjunto é pequeno e não estima confiabilidade estatística. Permanecem as limitações de glifos e ordem da extração, conteúdo não textual não interpretado, separação de trechos por página e ausência de limiar de similaridade calibrado. A presença de uma fonte recuperada não garante que ela sustente cada afirmação.
+
+A documentação de execução está no [README principal](../README.md); o estado das etapas e as evidências adicionais estão no [checklist](../CHECKLIST.md).

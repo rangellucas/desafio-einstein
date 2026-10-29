@@ -4,6 +4,8 @@ API feita para um desafio técnico: responde perguntas em português com base em
 
 O uso é educacional, sem diagnóstico ou prescrição individual. Cada pergunta é independente, sem histórico de conversa.
 
+**API publicada:** [Swagger](https://desafio-einstein.onrender.com/docs). As consultas exigem o token de acesso; a primeira requisição após inatividade pode demorar alguns segundos.
+
 ## Executar localmente
 
 Use Python **3.12.3**. Na raiz do projeto, em Linux/macOS:
@@ -117,7 +119,29 @@ python -m pip check
 
 A suíte usa dados sintéticos, gateway simulado e Qdrant temporário, sem credenciais ou consumo de modelos. Cobre ingestão e retomada, validação, autenticação, erros, limites e cancelamento. Os testes de streaming usam Uvicorn e HTTP local para conferir que fragmentos chegam antes da conclusão.
 
-A avaliação com modelos reais é separada: [procedimento](evals/README.md) e [resultados](evals/results.md). A recuperação registrada encontrou a fonte esperada em **7 de 8 perguntas**; a revisão formal das respostas permanece pendente. Testes com substitutos não medem a qualidade dos modelos.
+## Avaliação do RAG
+
+O conjunto tem 12 casos: oito perguntas com fontes esperadas, duas fora da base, uma tentativa de alterar as instruções e uma solicitação clínica individual. Primeiro se verifica a recuperação; depois, as respostas do modelo padrão e dois casos no alternativo, com revisão das afirmações e referências.
+
+Para visualizar o plano, sem chamadas de modelos:
+
+```bash
+python -m scripts.evaluate --phase retrieval
+python -m scripts.evaluate --phase answers
+python -m scripts.evaluate --phase answers --model alternate
+```
+
+A execução real exige a base pronta, ambiente exportado e as confirmações descritas no [guia de avaliação](evals/README.md). Uma rodada completa pode consumir **até 12 embeddings e 14 gerações**, além da preparação da base. Pare a API se usar o mesmo índice local.
+
+Após preencher as revisões em `data/evals/stage6/reviews.json`, gere o resumo local, sem consumir modelos:
+
+```bash
+python -m scripts.evaluate --phase summary --execute
+```
+
+O resumo só retorna sucesso com pelo menos **7/8** na recuperação e as **14 revisões aprovadas**. Perguntas, respostas e trechos coletados ficam em `data/evals/`, fora do Git.
+
+O resultado numérico registrado da recuperação foi **7/8**. A avaliação e a revisão das respostas foram concluídas, conforme confirmação do responsável no [relatório de resultados](evals/results.md). Os testes com substitutos verificam o código, sem medir a qualidade dos modelos.
 
 ## Decisões técnicas
 
@@ -128,10 +152,10 @@ A avaliação com modelos reais é separada: [procedimento](evals/README.md) e [
 - **Ingestão manual:** fica fora do startup e das consultas. IDs determinísticos permitem retomar sem duplicar pontos ou recalcular embeddings já persistidos.
 - **JSON e SSE compartilham o mesmo RAG:** JSON acumula os fragmentos; SSE os repassa conforme chegam. Os clientes externos são assíncronos e reutilizados durante a execução da API.
 
-Os limites iniciais são duas consultas simultâneas por processo e 90 segundos por consulta. Perguntas e respostas não são armazenadas por padrão. A configuração de publicação está em [render.yaml](render.yaml); a publicação e a validação no ambiente remoto continuam pendentes no [checklist](CHECKLIST.md).
+Os limites iniciais são duas consultas simultâneas por processo e 90 segundos por consulta. Perguntas e respostas não são armazenadas por padrão. A configuração de publicação está em [render.yaml](render.yaml) e o registro das verificações está no [checklist](CHECKLIST.md).
 
 ## Uso de IA no desenvolvimento
 
 Usei o Codex no planejamento por etapas a partir do PRD, na implementação de código e testes, na revisão de erros e na documentação. O [PRD](PRD.md) definiu os contratos e o [checklist](CHECKLIST.md) registrou as entregas e verificações.
 
-Não usei LLM para reescrever as apostilas nem como avaliador das respostas. A conferência de fundamentação exige comparar a resposta com o documento e a página; essa revisão formal ainda está pendente.
+Não usei LLM para reescrever as apostilas nem como avaliador das respostas. A conferência de fundamentação compara as afirmações da resposta com o contexto utilizado, o documento e a página.
