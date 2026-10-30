@@ -4,7 +4,7 @@
 
 A aplicação permite consultar uma base de quatro apostilas de saúde mental por meio de uma API. A pessoa envia uma pergunta em português, escolhe um dos modelos disponíveis e recebe uma resposta fundamentada nos trechos recuperados dos documentos, acompanhada das referências para conferência.
 
-A API oferece resposta JSON e resposta progressiva por streaming. A documentação interativa do FastAPI, disponível em `/docs`, é a interface inicial de exploração e testes. Não haverá frontend próprio nesta versão.
+A API oferece resposta JSON e resposta progressiva por streaming. A documentação interativa do FastAPI, disponível em `/docs`, é a interface inicial de exploração e testes. Como exceção aprovada à ausência de frontend próprio, haverá uma única página em `/teste` para demonstrar o streaming, servida pelo mesmo FastAPI, sem alterar o RAG.
 
 O produto tem finalidade educacional. Não realiza diagnóstico, prescrição, avaliação clínica individual ou atendimento de emergência.
 
@@ -37,6 +37,7 @@ Uma resposta convincente não é evidência de funcionamento correto. Recuperaç
 - Seleção do modelo de geração em uma lista permitida.
 - Rotas JSON e SSE para consulta, com a mesma lógica de RAG.
 - Documentação OpenAPI e Swagger UI.
+- Página mínima de demonstração SSE em `/teste`, com HTML, CSS e JavaScript no mesmo arquivo, sem dependências, frameworks, fontes externas ou build.
 - Validação de entrada, erros previsíveis, limites de uso e proteção das credenciais.
 - Testes automatizados sem chamadas reais por padrão e avaliação manual pequena com fontes verificadas.
 - Publicação no Render gratuito, documentação de execução e histórico de commits progressivo.
@@ -44,6 +45,7 @@ Uma resposta convincente não é evidência de funcionamento correto. Recuperaç
 ### 3.2 Fora do escopo
 
 - Interface em React ou Next.js.
+- Frontend além da demonstração em `/teste`, renderização de Markdown ou animação que simule streaming.
 - LangGraph, LangChain, múltiplos agentes ou ferramentas autônomas.
 - Histórico de conversa, sessões persistentes e perguntas dependentes de mensagens anteriores.
 - Cadastro de usuários, JWT, permissões por usuário ou cobrança.
@@ -143,6 +145,7 @@ flowchart TD
 | `AGENTS.md`                | Instruções curtas para o Codex, derivadas deste documento.              |
 | `README.md`                | Instalação, execução, ingestão, testes, uso da API e decisões.          |
 | `app/main.py`              | Criação da aplicação, inicialização e fechamento dos clientes.          |
+| `app/static/demo.html`     | Página única para consumir os eventos SSE existentes na mesma origem.  |
 | `app/config.py`            | Leitura e validação das variáveis de ambiente.                          |
 | `app/schemas.py`           | Modelos de requisição, resposta e eventos públicos.                     |
 | `app/routes.py`            | Rotas, autenticação simples e tradução de erros para HTTP/SSE.          |
@@ -253,6 +256,7 @@ Essas regras orientam o modelo; não constituem garantia de ausência de alucina
 | `POST /chat`        | Consulta com resposta completa, adequada ao Swagger.                             | `200`, JSON.                                        |
 | `POST /chat/stream` | Consulta com entrega progressiva.                                                | `200`, `text/event-stream`.                         |
 | `GET /docs`         | Swagger UI.                                                                      | Página gerada pelo FastAPI.                         |
+| `GET /teste`        | Demonstração pública de streaming, fora do OpenAPI/Swagger.                       | HTML servido de caminho relativo a `app/main.py`.   |
 
 `/ready` não comprova completude pedagógica da base nem disponibilidade do gateway. A completude será conferida no relatório de ingestão; a compatibilidade do gateway terá uma verificação específica.
 
@@ -365,6 +369,23 @@ curl -N "$API_URL/chat/stream" \
 
 O cliente de verificação deve registrar o instante de chegada dos eventos e confirmar que pelo menos um `delta` chega antes da conclusão. Para verificar ausência de buffering, utilizar também um provedor substituto que emita fragmentos controlados com intervalo, consumido por uma conexão HTTP real com Uvicorn. Um teste em memória que recebe o corpo já acumulado não prova entrega progressiva pela rede.
 
+### 10.1 Interface mínima de demonstração
+
+`/teste` é a única exceção aprovada à ausência de frontend próprio. Usa `app/static/demo.html`, com HTML, CSS e JavaScript no mesmo arquivo, entregue pelo FastAPI junto da API no Render. Mantém o serviço e os comandos atuais, sem novas dependências, ferramentas de build ou alterações no RAG.
+
+- Exibir aviso educacional, token da aplicação em campo de senha, seletor de modelo, pergunta, botões **Enviar** e **Parar**, estado, resposta e fontes. Sem histórico ou Markdown.
+- Carregar `/models` ao abrir e selecionar `default_model`. Em falha HTTP, de conexão ou contrato inválido, bloquear o envio e orientar a recarregar.
+- Não persistir o token; enviá-lo apenas no cabeçalho Bearer do POST quando preenchido. Quando vazio, omitir esse cabeçalho, permitindo uso local sem autenticação configurada. Não usar a chave do gateway na página.
+- Validar pergunta não vazia e até 1.500 caracteres após remover espaços nas extremidades; a API mantém a validação definitiva. Impedir envios simultâneos e substituir a resposta anterior a cada envio válido.
+- Fazer um único `fetch` POST `/chat/stream`, com pergunta e modelo. Ler o corpo progressivamente, mantendo o decodificador UTF-8 e acumulando eventos incompletos entre blocos da rede.
+- `sources`: mostrar identificador, documento e página física; `delta`: acrescentar imediatamente o texto; `done`: distinguir conclusão normal, limite de saída e insuficiência de contexto; `error`: mostrar a mensagem pública e preservar o texto parcial.
+- Renderizar todo conteúdo recebido como texto, preservando quebras de linha, sem interpretar HTML. Tratar erros HTTP, falha de conexão e encerramento sem terminal; estes últimos não representam sucesso.
+- **Parar** usa `AbortController` para cancelar a requisição, preserva texto recebido e libera controles após a limpeza do leitor. Sem repetição automática ou streaming artificial.
+
+A validação inclui entrega pública do HTML sem token e sem modelos em `tests/test_demo.py`, regressões de contratos, autenticação, cancelamento e entrega progressiva e a suíte completa uma vez. No navegador, usar resposta sintética controlada para fragmentos separados, eventos partidos, acentos, fontes, erro após texto parcial, interrupção sem terminal e cancelamento. Confirmar que o primeiro fragmento aparece enquanto a resposta ainda está aberta. A simulação pertence somente à validação; não adicionar modo falso à aplicação. Sem navegador disponível, registrar essa verificação como pendente e distinguir evidências simuladas de verificações reais.
+
+A implementação não autoriza publicação, ingestão ou chamadas reais. Uma futura verificação real exige autorização específica e objetivo informado previamente, com teto de **1 embedding e 1 geração**, sem repetição automática. Organizar em commit próprio, sugerido como `feat: adiciona interface mínima de demonstração SSE`, sem criá-lo automaticamente. Para retirar, reverter esse commit e publicar novamente; para recuperação imediata, usar um deploy anterior disponível no Render. Não há migração nem alteração da coleção.
+
 ## 11. Configuração, segurança e custos
 
 ### 11.1 Configuração prevista
@@ -392,7 +413,7 @@ Os demais parâmetros iniciais podem permanecer como constantes nomeadas em `con
 ### 11.2 Proteções proporcionais ao produto
 
 - Configurar token de acesso obrigatório no ambiente publicado, utilizando os recursos de segurança do FastAPI para habilitar o botão **Authorize** no Swagger.
-- Manter `/health`, `/ready`, `/models` e `/docs` acessíveis sem o token; não expor chaves ou detalhes internos nessas respostas.
+- Manter `/health`, `/ready`, `/models`, `/docs` e `/teste` acessíveis sem o token; não expor chaves ou detalhes internos nessas respostas. A página pública não libera as rotas de consulta da autenticação configurada.
 - O token de acesso da aplicação é diferente da chave do gateway. Não publicar nenhum deles no README ou nos exemplos versionados.
 - Usar credencial de consulta para a API no Qdrant Cloud, quando disponível; manter a credencial de escrita apenas no ambiente de ingestão.
 - Não armazenar perguntas e respostas por padrão, pois podem conter informações sensíveis.
@@ -400,7 +421,7 @@ Os demais parâmetros iniciais podem permanecer como constantes nomeadas em `con
 - Aplicar limites de pergunta, contexto, saída e concorrência antes das chamadas externas.
 - Utilizar um worker no Render nesta versão. O limite de concorrência em memória vale por processo e não constitui uma cota financeira global.
 - Desabilitar retentativas automáticas do SDK inicialmente. Uma falha retorna erro claro; não disparar várias chamadas cobradas silenciosamente.
-- Não adicionar CORS permissivo: o Swagger está na mesma origem e não há frontend separado.
+- Não adicionar CORS permissivo: Swagger e demonstração estão na mesma origem e não há frontend separado.
 
 Um token compartilhado e o limite de concorrência reduzem exposição, mas não impõem teto de gasto acumulado. Usar também o limite financeiro do gateway, se disponível, e acompanhar seu consumo. A hospedagem gratuita não torna as chamadas de modelos gratuitas.
 
@@ -590,7 +611,7 @@ Implementar uma etapa por solicitação. O encerramento de uma etapa não autori
 
 | Decisão                 | Explicação curta                                                                                               |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| API e Swagger           | A interface necessária é HTTP; a documentação interativa permite explorar o contrato sem manter um frontend.   |
+| API, Swagger e demo     | Swagger explora o contrato; `/teste` é a exceção mínima para demonstrar SSE, servida pela API sem build próprio. |
 | RAG com funções         | O fluxo é fixo: buscar evidências e gerar a resposta. Funções deixam esse caminho visível.                     |
 | SDK direto              | O gateway já usa o formato compatível; um adaptador pequeno concentra os detalhes do provedor.                 |
 | Qdrant                  | Armazena os vetores junto dos trechos e permite busca por similaridade com metadados de origem.                |

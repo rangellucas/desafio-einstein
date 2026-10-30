@@ -4,6 +4,8 @@ Requisitos e critérios de aceite: [PRD](PRD.md), seções 12–16. Instruções
 
 **Estado em 29/10/2026:** etapas 0–7 e documentação concluídas. A revisão dos PDFs, a avaliação e as verificações da publicação foram confirmadas pelo responsável; os resultados estão consolidados em [evals/results.md](evals/results.md). Essa confirmação atualiza os registros anteriores de pendência, sem nova execução pelo agente. API: [desafio-einstein.onrender.com](https://desafio-einstein.onrender.com/) · [Swagger](https://desafio-einstein.onrender.com/docs).
 
+**Incremento em 30/10/2026:** interface mínima `/teste` implementada localmente conforme solicitação própria. Testes sem modelos aprovados; validação visual no navegador pendente. A página ainda não foi publicada. Detalhes e limites nas evidências ao final.
+
 ## Etapas
 
 - [x] **0 — Requisitos e instruções:** PRD, AGENTS e checklist definidos, com escopo, contratos e critérios de aceite. AC-14.
@@ -57,3 +59,26 @@ Limitações permanentes: perdas da extração, conteúdo não textual não inte
 - [x] Acrescentar ao README o plano de avaliação sem modelos, teto de consumo, resumo local e critérios de aprovação.
 - [x] Resumir o checklist, preservando as conclusões confirmadas, as evidências principais e as pendências de documentação.
 - [x] Validar 24 links locais, 18 blocos Bash, consistência das URLs e `git diff --check` nos quatro documentos. Os três comandos de plano já haviam sido conferidos na revisão anterior. Nenhuma chamada de modelo, ingestão, publicação ou nova execução da suíte neste fechamento.
+
+## Interface mínima de demonstração SSE — 30/10/2026
+
+- [x] Registrar a exceção de frontend no [PRD, seção 10.1](PRD.md#101-interface-mínima-de-demonstração), restrita à página `/teste`, sem histórico, Markdown, dependências novas ou alteração no RAG.
+- [x] Criar [app/static/demo.html](app/static/demo.html) com aviso educacional, token em senha sem persistência, seleção de modelo via `/models`, pergunta, Enviar/Parar, estado, texto e fontes por identificador/documento/página física. Bloquear envio se os modelos não carregarem; selecionar `default_model`.
+- [x] Entregar o HTML por rota pública fora do Swagger, com caminho relativo ao módulo em [app/main.py](app/main.py). Manter a autenticação configurada das consultas e os comandos atuais do Render.
+- [x] Consumir um único POST `/chat/stream` por envio, com Bearer somente se preenchido, validação após trim e limite de 1.500 pontos de código, bloqueio de simultaneidade, decoder UTF-8 persistente e buffer de eventos incompletos. Renderizar conteúdo como texto e preservar quebras de linha.
+- [x] Tratar fontes, deltas, três motivos de conclusão, erro público, falha HTTP/conexão e EOF sem terminal. Cancelar por `AbortController`, preservar texto e liberar controles após a limpeza, sem repetição automática.
+- [x] Acrescentar [tests/test_demo.py](tests/test_demo.py): HTML público sem token mesmo com autenticação configurada, arquivo independente do diretório de trabalho, ausência no OpenAPI, consulta ainda protegida e nenhuma criação/chamada de gateway, com rede externa bloqueada pelas fixtures.
+- [x] Executar regressões: `tests/test_demo.py`, `tests/test_api.py`, `tests/test_chat.py`, `tests/test_stream.py`, `tests/test_stream_http.py` e `tests/test_check_stream.py`: **160 aprovados**, um aviso de depreciação do TestClient/httpx. Incluem contratos, autenticação, cancelamento e primeiro delta por HTTP loopback com Uvicorn e provedor controlado antes da conclusão.
+- [x] Executar a suíte completa uma vez: **402 aprovados em 10,79 s**, dois avisos (TestClient/httpx e índices de payload sem efeito no Qdrant local). Nenhum consumo de modelos. A tentativa selecionada no sandbox ficou sem saída e foi interrompida; regressões e suíte completa concluíram fora dele, com as mesmas fixtures de isolamento.
+- [x] Validar sintaxe do JavaScript em Node e executar harness temporário, fora da aplicação, com `ReadableStream`, `fetch` e DOM substituídos. Cenários aprovados: modelo padrão e troca de modelo no POST; Bearer preenchido/omitido; pergunta vazia/excessiva e Unicode; bloqueio de simultaneidade; substituição da resposta; fragmentos separados; CRLF e acentos partidos byte a byte; múltiplos eventos por bloco; fontes; conteúdo com marcação tratado como texto; três motivos de `done`; erro após parcial; EOF sem terminal; terminal truncado; SSE inválido; falha de `/models`; HTTP 401/422/429/502/503/504; falha de conexão; cancelamento antes dos cabeçalhos e após texto, com preservação e liberação dos controles.
+- [ ] Validar no navegador com resposta sintética controlada e confirmar **visualmente** que o primeiro fragmento aparece enquanto a resposta está aberta. Não havia navegador ou automação de navegador instalados. A simulação Node confirmou apenas a atualização do DOM substituto com stream aberto; não comprova pintura, layout ou comportamento do navegador. Repetir nele os cenários de fragmentos/eventos partidos, acentos, fontes, erro após parcial, EOF sem terminal e cancelamento. Sem modo falso na aplicação.
+- [x] Atualizar README com acesso local, URL futura no Render, escopo, consumo, evidências, pendências e rollback. Revisão de diff e links locais registrada após as alterações.
+- [ ] Publicação e verificação real desta interface, somente mediante autorização futura. Não executadas neste incremento; teto da verificação: **1 embedding e 1 geração**, objetivo informado previamente e sem repetição automática. Não houve ingestão nem alteração da coleção.
+
+Mudança preparada para commit próprio sugerido: `feat: adiciona interface mínima de demonstração SSE`. Nenhum commit criado. Retirada: reverter esse commit e publicar novamente; recuperação imediata: usar um deploy anterior disponível no Render. Sem migração ou alteração da coleção.
+
+### Diagnóstico local de base indisponível — 30/10/2026
+
+- Consulta HTTP local sem modelos: `/health` retornou **200** e `/ready`, **503**. O diretório `data/qdrant/collection/saude_mental_v1` existe; isso não comprova integridade nem configuração do processo em execução.
+- O `.env` existe, mas as variáveis de Qdrant/gateway não estavam exportadas no ambiente da execução de diagnóstico. O ambiente do terminal que iniciou o Uvicorn não foi inspecionado; valores de chaves não foram lidos ou exibidos. O projeto não carrega `.env` automaticamente.
+- Próxima verificação: reiniciar a API após carregar o ambiente conforme README e consultar `/ready` novamente. Causa definitiva e recuperação ainda não confirmadas. Sem alteração de código, ingestão ou chamadas de modelos neste diagnóstico.

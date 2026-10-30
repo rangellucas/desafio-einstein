@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Demonstração de streaming — Saúde mental</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #18342f; background: #f1f5f3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 24px 16px; }
+    main { max-width: 800px; margin: auto; }
+    h1 { font-size: 1.7rem; margin-top: 0; }
+    h2 { font-size: 1.15rem; }
+    .notice { border-left: 4px solid #38766a; padding: 12px 16px; background: #e2eeea; }
+    form, section { background: #fff; border: 1px solid #c8d7d1; border-radius: 8px; padding: 20px; margin-top: 20px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input, select, textarea, button { font: inherit; }
+    input, select, textarea { width: 100%; padding: 10px; border: 1px solid #748e84; border-radius: 4px; }
+    textarea { resize: vertical; min-height: 110px; }
+    .field { margin-bottom: 18px; }
+    .hint { margin: 6px 0 0; color: #435d55; font-size: .9rem; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    button { border: 1px solid #245a4e; border-radius: 4px; padding: 10px 20px; cursor: pointer; background: #245a4e; color: #fff; }
+    #stop { color: #245a4e; background: #fff; }
+    button:disabled { opacity: .55; cursor: default; }
+    :focus-visible { outline: 3px solid #996200; outline-offset: 3px; }
+    #status { min-height: 1.5em; }
+    #answer, #sources { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+    #answer { min-height: 3em; }
+    #sources { padding-left: 24px; }
+    #sources li { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Consulta sobre saúde mental</h1>
+  <p class="notice">Demonstração educacional baseada em apostilas. Não realiza diagnóstico, prescrição ou atendimento de emergência. Confira as referências nas páginas físicas dos PDFs.</p>
+  <noscript>Ative o JavaScript para carregar os modelos e acompanhar a resposta.</noscript>
+  <form id="query-form">
+    <div class="field">
+      <label for="token">Token da aplicação</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" aria-describedby="token-help">
+      <p class="hint" id="token-help">Use o token de acesso à API, sem o prefixo Bearer. O campo não é persistido pela página. Pode ficar vazio no desenvolvimento local sem autenticação.</p>
+    </div>
+    <div class="field">
+      <label for="model">Modelo</label>
+      <select id="model" disabled></select>
+    </div>
+    <div class="field">
+      <label for="question">Pergunta</label>
+      <textarea id="question" aria-describedby="question-help"></textarea>
+      <p class="hint" id="question-help">De 1 a 1.500 caracteres após remover espaços nas extremidades. Cada envio substitui a resposta anterior, sem histórico. Uma consulta pode consumir 1 embedding e 1 geração.</p>
+    </div>
+    <div class="actions">
+      <button id="send" type="submit" disabled>Enviar</button>
+      <button id="stop" type="button" disabled>Parar</button>
+    </div>
+  </form>
+  <p id="status" role="status" aria-live="polite">Carregando modelos…</p>
+  <section aria-labelledby="answer-title" aria-busy="false" id="result">
+    <h2 id="answer-title">Resposta</h2>
+    <div id="answer"></div>
+    <h2>Fontes</h2>
+    <p class="hint">Fontes disponibilizadas ao modelo; confira se sustentam as afirmações. Página física contada a partir de 1.</p>
+    <ul id="sources"></ul>
+  </section>
+</main>
+<script>
+  "use strict";
+  const form = document.getElementById("query-form");
+  const tokenInput = document.getElementById("token");
+  const modelInput = document.getElementById("model");
+  const questionInput = document.getElementById("question");
+  const sendButton = document.getElementById("send");
+  const stopButton = document.getElementById("stop");
+  const status = document.getElementById("status");
+  const answer = document.getElementById("answer");
+  const sources = document.getElementById("sources");
+  const result = document.getElementById("result");
+  let modelsReady = false;
+  let activeController = null;
+
+  function setBusy(busy) {
+    sendButton.disabled = busy || !modelsReady;
+    stopButton.disabled = !busy;
+    modelInput.disabled = busy || !modelsReady;
+    questionInput.disabled = busy;
+    tokenInput.disabled = busy;
+    result.setAttribute("aria-busy", String(busy));
+  }
+
+  // await cede o controle ao navegador durante a rede; a página continua interativa.
+  async function loadModels() {
+    try {
+      const response = await fetch("/models", { cache: "no-store" });
+      if (!response.ok) throw new Error("models_http");
+      const data = await response.json();
+      if (!Array.isArray(data.models) || !data.models.length ||
+          !data.models.every(model => typeof model === "string" && model.length > 0) ||
+          !data.models.includes(data.default_model)) throw new Error("models_invalid");
+      for (const model of data.models) {
+        const option = document.createElement("option");
+        option.value = model;
+        option.textContent = model;
+        modelInput.append(option);
+      }
+      modelInput.value = data.default_model;
+      modelsReady = true;
+      status.textContent = "Pronto para enviar.";
+    } catch {
+      status.textContent = "Não foi possível carregar os modelos. Recarregue a página para tentar novamente.";
+    }
+    setBusy(false);
+  }
+
+  function showSources(items) {
+    sources.replaceChildren();
+    if (items.length === 0) {
+      const item = document.createElement("li");
+      item.textContent = "Nenhuma fonte recuperada.";
+      sources.append(item);
+    }
+    for (const source of items) {
+      const item = document.createElement("li");
+      item.textContent = `[${source.id}] ${source.document} — página física ${source.page}`;
+      sources.append(item);
+    }
+  }
+
+  // Um bloco da rede pode conter parte de um evento ou vários eventos completos.
+  function parseEvent(block) {
+    let name = "message";
+    const data = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith(":")) continue;
+      const colon = line.indexOf(":");
+      const field = colon < 0 ? line : line.slice(0, colon);
+      let value = colon < 0 ? "" : line.slice(colon + 1);
+      if (value.startsWith(" ")) value = value.slice(1);
+      if (field === "event") name = value;
+      if (field === "data") data.push(value);
+    }
+    if (data.length === 0) return null;
+    return { name, data: JSON.parse(data.join("\n")) };
+  }
+
+  function displayEvent(event) {
+    if (event === null) return false;
+    const data = event.data;
+    switch (event.name) {
+      case "sources":
+        if (!Array.isArray(data.sources)) throw new Error("invalid_sources");
+        showSources(data.sources);
+        break;
+      case "delta":
+        if (typeof data.text !== "string") throw new Error("invalid_delta");
+        answer.append(document.createTextNode(data.text));
+        status.textContent = "Recebendo resposta…";
+        break;
+      case "done": {
+        const messages = {
+          stop: "Consulta concluída.",
+          length: "Limite de saída atingido. A resposta está incompleta.",
+          insufficient_context: "Consulta encerrada: contexto insuficiente para responder."
+        };
+        if (!Object.hasOwn(messages, data.finish_reason)) throw new Error("invalid_done");
+        status.textContent = messages[data.finish_reason];
+        return true;
+      }
+      case "error":
+        if (typeof data.message !== "string" || !data.message) throw new Error("invalid_error");
+        status.textContent = `Erro: ${data.message} O texto parcial foi preservado.`;
+        return true;
+      default:
+        throw new Error("unexpected_event");
+    }
+    return false;
+  }
+
+  async function httpError(response) {
+    const fallback = {
+      401: "Token ausente ou incorreto.",
+      422: "Confira a pergunta e o modelo selecionado.",
+      429: "Capacidade ocupada. Aguarde antes de enviar novamente.",
+      502: "Não foi possível obter resposta do serviço de modelos.",
+      503: "Base ou serviço de modelos indisponível.",
+      504: "A consulta excedeu o prazo de resposta."
+    };
+    let message = fallback[response.status] || "Não foi possível iniciar a consulta.";
+    try {
+      const data = await response.json();
+      if (typeof data.detail?.message === "string") message = data.detail.message;
+    } catch {
+      // Proxies podem devolver HTML; exibimos somente a mensagem local nesse caso.
+    }
+    return `Erro HTTP ${response.status}: ${message}`;
+  }
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!modelsReady || activeController !== null) return;
+    const question = questionInput.value.trim();
+    // Conta pontos de código, como len(str) na API, inclusive fora do BMP.
+    if (!question || Array.from(question).length > 1500) {
+      status.textContent = "Informe uma pergunta de 1 a 1.500 caracteres após remover espaços nas extremidades.";
+      return;
+    }
+    const controller = new AbortController();
+    activeController = controller;
+    let reader = null;
+    let terminal = false;
+    answer.replaceChildren();
+    sources.replaceChildren();
+    setBusy(true);
+    status.textContent = "Aguardando resposta…";
+    try {
+      const headers = { "Content-Type": "application/json", "Accept": "text/event-stream" };
+      if (tokenInput.value) headers.Authorization = `Bearer ${tokenInput.value}`;
+      const response = await fetch("/chat/stream", {
+        method: "POST", headers,
+        body: JSON.stringify({ question, model: modelInput.value }),
+        signal: controller.signal, cache: "no-store"
+      });
+      if (!response.ok) {
+        status.textContent = await httpError(response);
+        return;
+      }
+      if (!response.body || !response.headers.get("content-type")?.startsWith("text/event-stream")) {
+        throw new Error("invalid_stream");
+      }
+      reader = response.body.getReader();
+      // O decoder vive por toda a consulta para preservar acentos partidos entre bytes.
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      let pending = "";
+      while (!terminal) {
+        const { value, done } = await reader.read();
+        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        let boundary;
+        while (!terminal && (boundary = /\r?\n\r?\n/.exec(pending)) !== null) {
+          const block = pending.slice(0, boundary.index);
+          pending = pending.slice(boundary.index + boundary[0].length);
+          terminal = displayEvent(parseEvent(block));
+        }
+        if (done) {
+          if (!terminal) status.textContent = "Conexão encerrada sem evento terminal. A resposta pode estar incompleta; o texto parcial foi preservado.";
+          break;
+        }
+      }
+    } catch {
+      status.textContent = controller.signal.aborted
+        ? "Consulta cancelada. O texto recebido foi preservado."
+        : "Falha de conexão ou resposta SSE inválida. O texto parcial foi preservado.";
+    } finally {
+      // Cancela o leitor também após um terminal; só libera os controles após a limpeza.
+      if (reader !== null) {
+        try { await reader.cancel(); } catch { /* A conexão já pode estar fechada. */ }
+        reader.releaseLock();
+      }
+      if (controller.signal.aborted) status.textContent = "Consulta cancelada. O texto recebido foi preservado.";
+      activeController = null;
+      setBusy(false);
+    }
+  });
+
+  stopButton.addEventListener("click", () => {
+    if (activeController === null) return;
+    status.textContent = "Cancelando consulta…";
+    stopButton.disabled = true;
+    activeController.abort();
+  });
+
+  loadModels();
+</script>
+</body>
+</html>

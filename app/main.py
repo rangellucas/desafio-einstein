@@ -4,10 +4,11 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from collections.abc import AsyncIterator
 import asyncio
 import logging
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
 from app.config import load_api_settings, load_gateway_settings, load_vector_settings
@@ -53,6 +54,12 @@ app = FastAPI(
     version="0.5.0", lifespan=lifespan,
 )
 app.include_router(router)
+
+
+@app.get("/teste", include_in_schema=False)
+def demo() -> FileResponse:
+    """Demonstração pública; abrir o HTML não executa uma consulta."""
+    return FileResponse(Path(__file__).resolve().parent / "static" / "demo.html", media_type="text/html")
 
 
 @app.get("/health", summary="Verificar se o processo responde")

@@ -1,6 +1,6 @@
 # Consulta sobre saúde mental
 
-API feita para um desafio técnico: responde perguntas em português com base em quatro apostilas de saúde mental e retorna as fontes por documento e página. Oferece resposta JSON, streaming via SSE e Swagger para explorar os endpoints.
+API feita para um desafio técnico: responde perguntas em português com base em quatro apostilas de saúde mental e retorna as fontes por documento e página. Oferece resposta JSON, streaming via SSE, Swagger para explorar os endpoints e uma página mínima em `/teste` para acompanhar o texto progressivamente.
 
 O uso é educacional, sem diagnóstico ou prescrição individual. Cada pergunta é independente, sem histórico de conversa.
 
@@ -108,6 +108,14 @@ curl --fail -N http://127.0.0.1:8000/chat/stream \
 
 O stream envia `sources`, fragmentos `delta` e um terminal `done` ou `error`. `finish_reason: length` indica corte pelo limite de saída; `insufficient_context` indica falta de suporte. O Swagger serve para explorar o contrato; para medir a chegada dos eventos, use `python -m scripts.check_stream --execute --model azure/gpt-6-luna` **no lugar do curl SSE**, pois também faz uma consulta real.
 
+## Demonstração no navegador
+
+Com a API local em execução, abra [http://127.0.0.1:8000/teste](http://127.0.0.1:8000/teste). A página é pública e fica fora do Swagger. Carrega `/models` e seleciona o padrão; se falhar, bloqueia o envio e pede para recarregar.
+
+Informe o **token da aplicação**, sem `Bearer`, se a API exigir autenticação. A página não persiste o token e o envia apenas no cabeçalho do POST. Deixe vazio no desenvolvimento local sem autenticação. Escolha o modelo, escreva uma pergunta independente de até 1.500 caracteres e clique em **Enviar**. Cada consulta pode consumir **1 embedding e 1 geração**; não há repetição automática.
+
+A resposta aparece conforme os eventos SSE chegam e cada envio substitui o anterior. As fontes mostram identificador, documento e página física do PDF. **Parar** cancela a requisição e preserva o texto recebido. O estado distingue conclusão, limite de saída, contexto insuficiente, erro e encerramento sem terminal; um texto parcial pode estar incompleto. A página apresenta texto simples, sem Markdown, interpretação de HTML ou histórico de conversa.
+
 ## Testes
 
 Com o ambiente virtual ativo:
@@ -145,7 +153,7 @@ O resultado numérico registrado da recuperação foi **7/8**. A avaliação e a
 
 ## Decisões técnicas
 
-- **FastAPI e Pydantic:** contratos validados e Swagger sem manter um frontend.
+- **FastAPI e Pydantic:** contratos validados e Swagger; `/teste` é a exceção mínima para demonstrar SSE na mesma origem, sem build de frontend.
 - **RAG com funções e SDK OpenAI direto:** o fluxo é fixo — embedding da pergunta, busca e geração. O adaptador concentra os detalhes do gateway, sem LangChain ou LangGraph.
 - **Qdrant:** guarda vetores e trechos juntos. Usa armazenamento local no desenvolvimento e Cloud na configuração de publicação, para preservar a base fora do disco temporário do Render.
 - **Trechos por página:** até 1.200 caracteres, com sobreposição de 200. Facilita conferir as fontes, mas separa conteúdos que continuam na página seguinte. A busca traz até quatro trechos, sem limiar de similaridade calibrado.
